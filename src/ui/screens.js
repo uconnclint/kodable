@@ -68,6 +68,7 @@ export function renderMenu() {
           },
         }, icon('trash')),
       ),
+      h('a.guide-link', { href: './teacher-guide.html', target: '_blank', rel: 'noopener' }, '🍎 Grown-Ups’ Corner (Teacher Guide & Standards)'),
     ),
   );
 }

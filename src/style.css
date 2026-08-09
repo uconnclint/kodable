@@ -101,6 +101,11 @@ span.ui-icon-fallback { line-height: 1; width: auto; height: auto; }
 .game-logo .tagline { color: #efe9ff; font-size: 20px; text-shadow: 0 2px 6px rgba(0,0,0,0.4); }
 .menu-buttons { display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .menu-row { display: flex; gap: 12px; }
+.guide-link {
+  color: #efe9ff; font-size: 13px; text-decoration: none; opacity: 0.75;
+  border-bottom: 1px dashed rgba(239,233,255,0.5); padding-bottom: 1px;
+}
+.guide-link:hover, .guide-link:focus-visible { opacity: 1; }
 @keyframes bob { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-10px);} }
 
 /* ---------- panels (worldmap / levels / achievements / badges / chars) ---------- */

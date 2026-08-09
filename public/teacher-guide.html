@@ -1,0 +1,404 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blooptopia &mdash; Grown-Ups' Corner</title>
+<style>
+  :root{
+    --ink:#25324b;
+    --soft:#5a6a86;
+    --meadow:#58cc6d;
+    --cave:#8f73ff;
+    --canyon:#ffa53d;
+    --junction:#4db3ff;
+    --peaks:#ff5c5c;
+    --paper:#fffdf8;
+    --card:#ffffff;
+    --line:#e5ddd0;
+    --sky1:#f1eeff;
+    --sky2:#fef4ea;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{
+    margin:0;
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    color:var(--ink);
+    background:linear-gradient(160deg,var(--sky1),var(--sky2));
+    line-height:1.55;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:32px 28px 60px;}
+  header.hero{
+    background:linear-gradient(135deg,#5b3fa8,#8f73ff 60%,#58cc6d);
+    color:#fff;
+    border-radius:22px;
+    padding:34px 34px 30px;
+    box-shadow:0 12px 30px rgba(91,63,168,.28);
+    position:relative;
+    overflow:hidden;
+  }
+  header.hero .ball{
+    position:absolute;right:40px;top:50%;transform:translateY(-50%);
+    width:96px;height:96px;border-radius:50%;
+    background:radial-gradient(circle at 38% 34%,#e9e0ff,#8f73ff 55%,#5b3fa8 100%);
+    box-shadow:0 0 44px 10px rgba(143,115,255,.5),inset -8px -8px 18px rgba(0,0,0,.18);
+  }
+  header.hero .ball::after{
+    content:"";position:absolute;left:14px;top:16px;width:24px;height:24px;border-radius:50%;
+    background:rgba(255,255,255,.55);filter:blur(2px);
+  }
+  .eyebrow{letter-spacing:.16em;text-transform:uppercase;font-size:12px;font-weight:700;opacity:.9;margin:0;}
+  h1{margin:6px 0 8px;font-size:34px;line-height:1.1;}
+  .hero p{margin:0;max-width:600px;font-size:16px;opacity:.96;}
+  h2{
+    font-size:23px;margin:38px 0 12px;color:var(--ink);
+    display:flex;align-items:center;gap:10px;
+  }
+  h2 .dot{width:14px;height:14px;border-radius:50%;flex:none;}
+  h3{font-size:17px;margin:20px 0 6px;color:var(--ink);}
+  p{margin:8px 0;}
+  a{color:var(--cave);}
+  .lead{font-size:16px;color:var(--soft);}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:18px 20px;margin:14px 0;box-shadow:0 4px 14px rgba(37,50,75,.05);
+  }
+  .tools{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .tool{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+    box-shadow:0 3px 10px rgba(37,50,75,.05);
+  }
+  .tool h3{margin:0 0 4px;display:flex;align-items:center;gap:8px;font-size:16px;}
+  .tool p{margin:0;font-size:14px;color:var(--soft);}
+  .chip{width:12px;height:12px;border-radius:4px;flex:none;display:inline-block;}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--card);
+    border-radius:12px;overflow:hidden;box-shadow:0 4px 14px rgba(37,50,75,.05);}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{background:#f0edfb;color:var(--ink);font-weight:700;}
+  tbody tr:nth-child(even){background:#faf8f3;}
+  code.std{font-family:"SF Mono",Consolas,monospace;font-weight:700;color:var(--cave);white-space:nowrap;}
+  .band{font-size:12px;font-weight:700;color:var(--cave);margin:22px 0 6px;letter-spacing:.04em;text-transform:uppercase;}
+  .lesson{
+    background:var(--card);border:1px solid var(--line);border-left:6px solid var(--meadow);
+    border-radius:14px;padding:16px 20px;margin:14px 0;box-shadow:0 4px 14px rgba(37,50,75,.05);
+  }
+  .lesson.g2{border-left-color:var(--cave);}
+  .lesson.g4{border-left-color:var(--junction);}
+  .lesson .tag{
+    display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:#fff;background:var(--meadow);border-radius:20px;padding:3px 12px;margin-bottom:4px;
+  }
+  .lesson.g2 .tag{background:var(--cave);}
+  .lesson.g4 .tag{background:var(--junction);}
+  .lesson h3{margin:4px 0 6px;font-size:19px;}
+  .meta{font-size:13px;color:var(--soft);margin:0 0 8px;}
+  .lesson ol{margin:6px 0 6px 18px;padding:0;}
+  .lesson ol li{margin:4px 0;}
+  .vocab{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;}
+  .vocab span{background:#f0edfb;border:1px solid var(--line);border-radius:20px;padding:3px 11px;font-size:12.5px;}
+  .qbox{background:#f4faf6;border:1px dashed var(--meadow);border-radius:10px;padding:10px 14px;margin-top:8px;font-size:13.5px;}
+  .qbox strong{color:var(--meadow);}
+  .ext{background:#f3f0fb;border:1px dashed var(--cave);border-radius:10px;padding:10px 14px;margin-top:8px;font-size:13.5px;}
+  .ext strong{color:var(--cave);}
+  .worlds{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0;}
+  .m{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13.5px;box-shadow:0 3px 10px rgba(37,50,75,.05);}
+  .m b{display:block;color:var(--cave);font-size:13px;margin-bottom:2px;}
+  .starters{columns:2;column-gap:22px;}
+  .starters .s{
+    break-inside:avoid;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;margin:0 0 12px;box-shadow:0 3px 10px rgba(37,50,75,.05);font-size:14px;
+  }
+  .starters .s b{display:block;color:var(--cave);margin-bottom:2px;font-size:13px;}
+  .rubric td:first-child{font-weight:700;color:var(--ink);width:150px;}
+  footer{margin-top:34px;text-align:center;font-size:12.5px;color:var(--soft);}
+  .note{font-size:12.5px;color:var(--soft);margin-top:6px;}
+  @media (max-width:680px){
+    .tools,.worlds{grid-template-columns:1fr;}
+    .starters{columns:1;}
+    header.hero .ball{display:none;}
+  }
+  @media print{
+    body{background:#fff;}
+    .wrap{max-width:100%;padding:0;}
+    header.hero{box-shadow:none;}
+    .card,.tool,.lesson,.m,table{box-shadow:none;}
+    h2{page-break-after:avoid;}
+    .lesson,.tool,.qbox,.ext,.starters .s{page-break-inside:avoid;}
+  }
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="ball" aria-hidden="true"></div>
+    <p class="eyebrow">Blooptopia &bull; Grown-Ups' Corner</p>
+    <h1>A Teacher &amp; Family Guide</h1>
+    <p>Blooptopia is a 3D block-coding adventure for Grades&nbsp;K&ndash;4. Students pre-program a bouncy
+    ball hero &mdash; a Bloop &mdash; with direction commands, color conditions, loops, and functions to
+    roll it through floating-island mazes, collecting stars along the way. Every level is solved by
+    writing a program first, then pressing Run and watching it play out.</p>
+  </header>
+
+  <h2><span class="dot" style="background:var(--cave)"></span>What Is Blooptopia?</h2>
+  <div class="card">
+    <p class="lead">Children don't drive Bloop directly &mdash; they <strong>write a program</strong> that
+    drives it for them. Drag direction commands (and later, color rules, loops, and functions) into a
+    program strip, then press <strong>Run</strong> to watch Bloop roll the maze exactly as written, or
+    <strong>Preview</strong> first to see the predicted path traced on the board without spending a run.
+    Bloop rolls in a straight line until it hits an edge or wall, so each command is a real decision about
+    distance, not just direction. Sixty levels across five worlds gradually introduce sequencing, color
+    conditionals, loops, and reusable functions &mdash; the same building blocks of real programming
+    languages, in kid-sized form.</p>
+  </div>
+
+  <h2><span class="dot" style="background:var(--meadow)"></span>How Each Tool Works</h2>
+  <div class="tools">
+    <div class="tool">
+      <h3><span class="chip" style="background:var(--meadow)"></span>Direction Commands</h3>
+      <p>Drag Up / Down / Left / Right blocks into the program strip. Bloop rolls each command in order
+      until it hits an edge or wall, then waits for the next one &mdash; the foundation of sequencing.</p>
+    </div>
+    <div class="tool">
+      <h3><span class="chip" style="background:var(--cave)"></span>Color Conditions</h3>
+      <p>Rules like "if pink, turn left" fire every time Bloop rolls onto a matching colored tile. Students
+      reason about a rule that only sometimes applies &mdash; a first hands-on conditional (<em>if</em>).</p>
+    </div>
+    <div class="tool">
+      <h3><span class="chip" style="background:var(--canyon)"></span>Loops</h3>
+      <p>A loop block repeats a short sub-sequence 2&ndash;5 times, so a repeating maze pattern can be
+      solved with a handful of commands instead of writing every step out by hand.</p>
+    </div>
+    <div class="tool">
+      <h3><span class="chip" style="background:var(--junction)"></span>Functions (F1)</h3>
+      <p>Students teach Bloop a named trick once &mdash; a function &mdash; then call it from the main
+      program wherever that same move set is needed again, avoiding repeated work.</p>
+    </div>
+    <div class="tool">
+      <h3><span class="chip" style="background:#b9b9c6"></span>Preview Mode</h3>
+      <p>A free, unscored dry run that draws Bloop's predicted path on the board and reports whether the
+      current program reaches the goal &mdash; before a student commits to a real, scored Run.</p>
+    </div>
+    <div class="tool">
+      <h3><span class="chip" style="background:var(--peaks)"></span>3-Star &amp; Perfect Scoring</h3>
+      <p>Every level awards up to 3 stars for reaching the goal, plus a PERFECT badge for matching or
+      beating the level's par command count &mdash; encouraging students to revise for a shorter program.</p>
+    </div>
+    <div class="tool">
+      <h3><span class="chip" style="background:var(--cave)"></span>Bloop Collection</h3>
+      <p>Coins earned from stars and achievements unlock 16 characters built from 12 accessories and 6 eye
+      styles &mdash; a coin-economy reward layer that sits on top of the coding challenges.</p>
+    </div>
+    <div class="tool">
+      <h3><span class="chip" style="background:var(--canyon)"></span>Achievements &amp; Badges</h3>
+      <p>63 tiered achievements and 22 world/mastery badges track milestones like first perfect clear or
+      finishing a world, giving students clear, revisitable goals beyond "beat the level."</p>
+    </div>
+  </div>
+
+  <h3>The Five Worlds</h3>
+  <p class="lead">Each world adds exactly one new programming idea on top of everything before it, and
+  each has 12 levels.</p>
+  <div class="worlds">
+    <div class="m"><b>World 1 &bull; Bloopberry Meadows</b>Sequences only &mdash; direction commands, one after another.</div>
+    <div class="m"><b>World 2 &bull; Crystal Caverns</b>Color conditions &mdash; "if pink, turn left."</div>
+    <div class="m"><b>World 3 &bull; Loopy Canyon</b>Loops &mdash; repeat a short pattern 2&ndash;5 times.</div>
+    <div class="m"><b>World 4 &bull; Function Junction</b>Functions &mdash; teach Bloop a trick once, call it anywhere.</div>
+    <div class="m"><b>World 5 &bull; Bugstorm Peaks</b>Mastery &mdash; sequences, conditions, loops, and functions, combined.</div>
+  </div>
+
+  <h2><span class="dot" style="background:var(--canyon)"></span>Standards Alignment (CSTA)</h2>
+  <p class="lead">Blooptopia spans Grades&nbsp;K&ndash;4, so it touches two CSTA bands: <strong>Level&nbsp;1A</strong>
+  (K&ndash;2) and <strong>Level&nbsp;1B</strong> (grades 3&ndash;5). Below are only the standards we can
+  honestly justify, each tied to a real mechanic. Use the rows that match what your class actually does.</p>
+
+  <p class="band">CSTA Level 1A (Grades K&ndash;2)</p>
+  <table>
+    <thead>
+      <tr><th style="width:120px">Standard</th><th>Title (CSTA 1A)</th><th>How Blooptopia addresses it</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="std">1A-AP-08</code></td>
+        <td>Model daily processes by creating and following algorithms (sets of step-by-step instructions) to complete tasks.</td>
+        <td>Every level is written as an ordered list of direction commands that Bloop must follow exactly &mdash; a hands-on algorithm students build before pressing Run.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1A-AP-09</code></td>
+        <td>Model the way programs store and manipulate data by using numbers or other symbols to represent information.</td>
+        <td>Direction blocks are symbols (arrows) that stand for real moves; students track stars and coins collected as they plan a route.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1A-AP-10</code></td>
+        <td>Develop programs with sequences and simple loops, to express ideas or address a problem.</td>
+        <td>World 1 is pure sequencing; World 3 (Loopy Canyon) introduces simple loops that repeat a pattern to solve a maze.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1A-AP-11</code></td>
+        <td>Decompose (break down) the steps needed to solve a problem into a precise sequence of instructions.</td>
+        <td>Longer mazes require breaking the route into stages &mdash; roll here, then turn, then roll again &mdash; before dragging any blocks in.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1A-AP-14</code></td>
+        <td>Debug (identify and fix) errors in an algorithm or program, including problems in a sequence, and describe how they were fixed.</td>
+        <td>When Bloop rolls past the goal or into a wall, students use Preview to see exactly where the program went wrong, then edit and re-check it.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="band">CSTA Level 1B (Grades 3&ndash;5)</p>
+  <table>
+    <thead>
+      <tr><th style="width:120px">Standard</th><th>Title (CSTA 1B)</th><th>How Blooptopia addresses it</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="std">1B-AP-08</code></td>
+        <td>Compare and refine multiple algorithms for the same task and determine which is the most appropriate.</td>
+        <td>The PERFECT/par-command scoring invites students to compare a working solution against a shorter one and decide which is more efficient.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1B-AP-09</code></td>
+        <td>Create programs that use variables to store and modify data.</td>
+        <td>A function's remembered move sequence acts like a stored, reusable value that students call by name instead of re-typing it.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1B-AP-10</code></td>
+        <td>Create programs that include sequences, events, loops, and conditionals.</td>
+        <td>By World 5, a single program can combine direction sequences, color conditionals, and loops &mdash; exactly this standard, built level by level.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1B-AP-11</code></td>
+        <td>Decompose (break down) problems into smaller, manageable subproblems to facilitate the program development process.</td>
+        <td>Function Junction levels are explicitly solved by isolating a repeated sub-task, writing it once as F1, and calling it from the main program.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1B-AP-12</code></td>
+        <td>Design and iteratively develop programs that combine control structures, including nested loops and compound conditionals.</td>
+        <td>Bugstorm Peaks (World 5) levels nest loops and color conditions together inside the same maze, requiring iterative refinement to solve.</td>
+      </tr>
+      <tr>
+        <td><code class="std">1B-AP-15</code></td>
+        <td>Test and debug (identify and fix errors) a program or algorithm to ensure it runs as intended.</td>
+        <td>Preview mode is a built-in test-before-you-commit step; students read the predicted path, diagnose a mismatch, and fix the program before running it for real.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">Standard titles are quoted from the CSTA K&ndash;12 Computer Science Standards, Levels 1A (K&ndash;2) and 1B (grades 3&ndash;5).</p>
+
+  <h2><span class="dot" style="background:var(--peaks)"></span>Ready-to-Run Lesson Plans (25&ndash;30 minutes each)</h2>
+
+  <div class="lesson g2">
+    <span class="tag">Grade K&ndash;1</span>
+    <h3>Lesson 1 &mdash; Roll Bloop in the Right Order</h3>
+    <p class="meta">25 minutes &bull; whole group then pairs &bull; CSTA 1A-AP-08, 1A-AP-14</p>
+    <p><strong>Objective:</strong> Children build a short sequence of direction commands to guide Bloop from start to goal, and use Preview to find and fix a wrong step.</p>
+    <div class="vocab"><span>sequence</span><span>command</span><span>program</span><span>run</span><span>preview</span></div>
+    <ol>
+      <li><em>(4 min)</em> Gather at a shared screen. Open <strong>World 1: Bloopberry Meadows</strong>, Level 1. Drag one RIGHT block into the program strip together.</li>
+      <li><em>(4 min)</em> Press <strong>Preview</strong> first &mdash; watch the dotted path &mdash; then press <strong>Run</strong> and cheer as Bloop rolls.</li>
+      <li><em>(5 min)</em> Model a two-turn maze: RIGHT then DOWN. Ask "what order do the commands go in?" before dragging them in.</li>
+      <li><em>(9 min)</em> Pairs play through the next few Bloopberry Meadows levels on their own devices, using Preview before every Run.</li>
+      <li><em>(3 min)</em> Whole group: one pair demos their favorite level and reads their program aloud, command by command.</li>
+    </ol>
+    <div class="qbox"><strong>Discuss:</strong> What happens if the commands are in the wrong order? How did Preview help you before you pressed Run? What did Bloop do when it hit a wall?</div>
+    <div class="ext"><strong>Extension:</strong> Try to solve a level with one fewer command than you first used.</div>
+  </div>
+
+  <div class="lesson">
+    <span class="tag">Grade 2&ndash;3</span>
+    <h3>Lesson 2 &mdash; If It's Pink, Turn: Color Conditions &amp; Loops</h3>
+    <p class="meta">30 minutes &bull; pairs &bull; CSTA 1A-AP-10, 1B-AP-08, 1B-AP-10</p>
+    <p><strong>Objective:</strong> Students use a color-condition rule to make Bloop react differently on different tiles, then use a loop to shorten a repeating pattern, and compare command counts.</p>
+    <div class="vocab"><span>condition</span><span>if</span><span>rule</span><span>loop</span><span>repeat</span><span>par</span></div>
+    <ol>
+      <li><em>(4 min)</em> Introduce <strong>Crystal Caverns</strong>: "if pink, turn left" is a rule that only fires on pink tiles. Predict what happens on a non-pink tile.</li>
+      <li><em>(8 min)</em> Pairs solve two or three Crystal Caverns levels, checking every prediction with Preview first.</li>
+      <li><em>(4 min)</em> Move to <strong>Loopy Canyon</strong>. Show a maze with a repeating step pattern; write it out the long way first.</li>
+      <li><em>(8 min)</em> Now solve the same maze with a loop block instead. Compare command counts &mdash; which program is shorter?</li>
+      <li><em>(4 min)</em> Check for a PERFECT star: did the loop solution beat the level's par command count?</li>
+      <li><em>(2 min)</em> Share out: one pair explains their color rule, one explains their loop.</li>
+    </ol>
+    <div class="qbox"><strong>Discuss:</strong> When does the color rule <em>not</em> fire? Why is the loop version shorter? Could you use a loop and a color rule in the same program?</div>
+    <div class="ext"><strong>Extension:</strong> Find a level where a loop makes the program shorter than any sequence-only solution.</div>
+  </div>
+
+  <div class="lesson g4">
+    <span class="tag">Grade 3&ndash;4</span>
+    <h3>Lesson 3 &mdash; Teach Bloop a Trick: Functions &amp; Mastery Mazes</h3>
+    <p class="meta">30 minutes &bull; pairs &bull; CSTA 1B-AP-09, 1B-AP-11, 1B-AP-12, 1B-AP-15</p>
+    <p><strong>Objective:</strong> Students identify a repeated move pattern, capture it as a function (F1), call it from the main program, and debug a combined sequence-loop-condition maze using Preview.</p>
+    <div class="vocab"><span>function</span><span>reusable</span><span>call</span><span>decompose</span><span>debug</span></div>
+    <ol>
+      <li><em>(4 min)</em> Open <strong>Function Junction</strong>. Find a maze where the same three-move pattern appears twice. Ask: "do we have to write it twice?"</li>
+      <li><em>(6 min)</em> Model recording that pattern as F1, then calling F1 twice from the main program instead of repeating the moves.</li>
+      <li><em>(8 min)</em> Pairs solve two or three Function Junction levels, each time looking for a repeated pattern to turn into F1.</li>
+      <li><em>(8 min)</em> Move to <strong>Bugstorm Peaks</strong>. Attempt a mastery maze that combines sequences, a color rule, and a loop. Use Preview to find where the plan breaks, then fix one piece at a time.</li>
+      <li><em>(4 min)</em> Share out: one pair explains what their function does and why they made it.</li>
+    </ol>
+    <div class="qbox"><strong>Discuss:</strong> How did you decide what to put inside the function? What did Preview show you when the program was wrong? Which was hardest to combine &mdash; the loop or the color rule?</div>
+    <div class="ext"><strong>Extension:</strong> Solve a Bugstorm Peaks level for a PERFECT star, then explain out loud why that program can't get any shorter.</div>
+  </div>
+
+  <h2><span class="dot" style="background:var(--cave)"></span>Conversation Starters</h2>
+  <p class="lead">Good talk turns play into thinking. Try these while a child shows you their program
+  &mdash; there are no wrong answers.</p>
+  <div class="starters">
+    <div class="s"><b>Tell me about it</b>Show me your program for this level. What does each block do?</div>
+    <div class="s"><b>Prediction</b>Before you press Run, what do you think Bloop will do? Let's check with Preview.</div>
+    <div class="s"><b>Order matters</b>What would happen if you swapped these two commands around?</div>
+    <div class="s"><b>Conditions</b>When does your color rule fire? What happens on a tile that isn't that color?</div>
+    <div class="s"><b>Loops</b>What pattern is repeating here? How did the loop make your program shorter?</div>
+    <div class="s"><b>Functions</b>What trick did you teach Bloop? Where else could you use it?</div>
+    <div class="s"><b>Debugging</b>Did Bloop go somewhere you didn't expect? How did you figure out what to fix?</div>
+    <div class="s"><b>Efficiency</b>Could you solve this level with fewer commands? What would you try?</div>
+    <div class="s"><b>Real-world link</b>Where else do we follow a set of instructions in order, like a program?</div>
+  </div>
+
+  <h2><span class="dot" style="background:var(--junction)"></span>Capstone Assessment &mdash; "Plan Your Own Maze"</h2>
+  <div class="card">
+    <p class="lead">Ask each student (or pair) to sketch a short original maze on paper &mdash; including at
+    least one color tile and one repeating stretch &mdash; then build it as a program that solves their own
+    maze on the hardest world they've unlocked, and explain their choices out loud. Use the three-level
+    rubric below.</p>
+    <table class="rubric">
+      <thead>
+        <tr><th style="width:150px">Dimension</th><th>Emerging</th><th>Developing</th><th>Secure</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Sequencing</td>
+          <td>Needs help ordering commands; frequent wrong-order mistakes.</td>
+          <td>Builds a correct sequence with some trial and error.</td>
+          <td>Plans the full sequence before dragging any blocks in.</td>
+        </tr>
+        <tr>
+          <td>Conditions &amp; loops</td>
+          <td>Doesn't yet use color rules or loops without prompting.</td>
+          <td>Uses a color rule or loop with guidance.</td>
+          <td>Chooses a condition or loop independently because it fits the maze.</td>
+        </tr>
+        <tr>
+          <td>Functions</td>
+          <td>Repeats the same moves instead of reusing a function.</td>
+          <td>Uses a given function when told to.</td>
+          <td>Spots a repeated pattern and turns it into a function unprompted.</td>
+        </tr>
+        <tr>
+          <td>Debugging</td>
+          <td>Gives up or restarts from scratch when a run fails.</td>
+          <td>Uses Preview and fixes an obvious error with help.</td>
+          <td>Reads Preview, diagnoses the exact wrong step, and fixes just that part.</td>
+        </tr>
+        <tr>
+          <td>Explaining choices</td>
+          <td>Runs the program with little narration.</td>
+          <td>Names the blocks used (sequence, condition, loop, function).</td>
+          <td>Explains clearly why each block was chosen for that part of the maze.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note">Keep it playful: the goal is reasoning and persistence, not a perfect score. "Secure" work explains <em>why</em>, not just <em>what</em>.</p>
+  </div>
+
+  <footer>
+    Blooptopia &mdash; a 3D coding adventure that turns programming basics into a rolling, star-collecting game.<br>
+    Every level is a program written before it's run. Printable for the classroom or the fridge.
+  </footer>
+</div>
