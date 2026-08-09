@@ -15,14 +15,15 @@ export const TILE_COLORS = { p: 0xff6fae, b: 0x4db3ff, g: 0x58cc6d, o: 0xffa53d 
 let renderer, scene, camera;
 const updaters = new Set();
 let clouds = [];
-const clock = new THREE.Clock();
+let lastFrameTime = performance.now();
+let elapsedTime = 0;
 
 export function initRenderer() {
   const canvas = document.getElementById('gl');
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   scene = new THREE.Scene();
 
@@ -57,8 +58,11 @@ function resize() {
 }
 
 function tick() {
-  const dt = Math.min(clock.getDelta(), 0.2);
-  const t = clock.elapsedTime;
+  const now = performance.now();
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.2);
+  lastFrameTime = now;
+  elapsedTime += dt;
+  const t = elapsedTime;
   for (const fn of [...updaters]) fn(dt, t);
   for (const c of clouds) {
     c.position.x += c.userData.speed * dt;

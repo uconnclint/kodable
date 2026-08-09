@@ -4,7 +4,7 @@ import { playSfx } from '../audio/sfx.js';
 
 const queue = [];
 let showing = 0;
-const MAX_VISIBLE = 3;
+const MAX_VISIBLE = 1;
 
 export function toast({ icon, kind, title, sub }) {
   queue.push({ icon, kind, title, sub });
@@ -27,7 +27,7 @@ function drain() {
   const t = queue.shift();
   showing++;
   playSfx(t.kind && t.kind.startsWith('Badge') ? 'unlock' : 'achievement');
-  const el = h('div.toast', {},
+  const el = h('div.toast', { role: 'status', 'aria-live': 'polite' },
     h('div.t-icon', {}, t.icon || uiIcon('trophy')),
     h('div', {},
       h('h5', {}, t.kind || 'Unlocked'),
@@ -39,5 +39,5 @@ function drain() {
   setTimeout(() => {
     el.classList.add('out');
     setTimeout(() => { el.remove(); showing--; drain(); }, 320);
-  }, 3400);
+  }, 2400);
 }

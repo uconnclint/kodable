@@ -42,20 +42,15 @@ until the file exists — so you can add art incrementally and reload to see it.
 
 ## 1. Core gameplay tokens (highest priority — these are the coding blocks)
 
-These sit on the command palette and inside the player's program. They should
-read instantly at 40–46px. Design them as **glossy low-poly arrow "gems"** — a
-rounded 3D chevron/arrow pointing the right way. Keep the arrow shape identical
-across the four; only rotation + color change.
-
-| file | prompt subject | color | notes |
-|---|---|---|---|
-| `dir-up.png` | chunky 3D arrow pointing **up** | blue `#4db3ff` | white highlight facet on top |
-| `dir-down.png` | chunky 3D arrow pointing **down** | orange `#ffa53d` | same shape, rotated 180° |
-| `dir-left.png` | chunky 3D arrow pointing **left** | pink `#ff6fae` | same shape, rotated |
-| `dir-right.png` | chunky 3D arrow pointing **right** | green `#58cc6d` | same shape, rotated |
-
-> The four arrows MUST be the same model at four rotations so they're visually
-> a matched set. Rounded, beveled, toy-block feel.
+**Status: superseded — do not generate these as PNGs.** These sit on the
+command palette and inside the player's program (the highest-frequency glyphs
+in the whole game), and the first-pass illustrated "gem" icons — while
+on-brand — read as decoration rather than an unambiguous arrow: kids couldn't
+tell direction at a glance. They're now drawn as a plain vector chevron+shaft
+arrow directly in code (`dirArrowIcon()` in `src/ui/icons.js`), colored per
+direction via CSS `currentColor` so it always matches the token's border. No
+`dir-up/down/left/right.png` files are loaded or needed — leave this style
+(illustrated gem) for other icons in this spec, not for direction arrows.
 
 | file | subject | notes |
 |---|---|---|
@@ -152,6 +147,10 @@ separate `map` asset needed). If per-achievement/per-badge unique art is wanted
 later (85 images for full variety instead of the 3 reused medals), ask for the
 `id → name` export.
 
+**Update:** the 4 direction-arrow PNGs (`dir-up/down/left/right.png`) were
+replaced by a code-drawn vector arrow — see the note in section 1 above. The
+PNG files still sit unused in `public/assets/ui/`; harmless to keep or delete.
+
 ## Integration checklist (for whoever wires it up after art is generated)
 
 1. Save each PNG into `public/assets/ui/` with the exact filename above.
@@ -164,7 +163,7 @@ later (85 images for full variety instead of the 3 reused medals), ask for the
 ## Full filename list (copy/paste)
 
 ```
-dir-up  dir-down  dir-left  dir-right  loop  function
+loop  function
 run  preview  play  next  replay  clear  back
 coin  star-filled  star-empty  lock  sound-on  sound-off  trash
 bloop  trophy  badge  perfect  win  question

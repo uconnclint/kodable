@@ -7,6 +7,7 @@ export function h(spec, props = {}, ...children) {
     else if (r[0] === '#') el.id = r.slice(1);
   }
   for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
     if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
     else if (k === 'style') {
       for (const [sk, sv] of Object.entries(v)) {
@@ -16,6 +17,7 @@ export function h(spec, props = {}, ...children) {
     }
     else if (k === 'dataset') Object.assign(el.dataset, v);
     else if (k === 'html') el.innerHTML = v;
+    else if (v === true) el.setAttribute(k, '');
     else el.setAttribute(k, v);
   }
   for (const c of children.flat()) {

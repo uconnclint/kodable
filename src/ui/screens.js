@@ -30,15 +30,19 @@ function screen(id, ...kids) {
 }
 
 function backBtn(target) {
-  return h('button.icon-btn', { onClick: () => { playSfx('ui'); ctx.show(target); } }, icon('back'));
+  return h('button.icon-btn', { 'aria-label': 'Back', onClick: () => { playSfx('ui'); ctx.show(target); } }, icon('back'));
 }
 
 const starsTotal = () => Object.values(state.stars).reduce((a, b) => a + b, 0);
 
 // ---------- MENU ----------
 export function renderMenu() {
-  const setMuteIcon = () => muteBtn.replaceChildren(icon(isMuted() ? 'sound-off' : 'sound-on'));
+  const setMuteIcon = () => {
+    muteBtn.replaceChildren(icon(isMuted() ? 'sound-off' : 'sound-on'));
+    muteBtn.setAttribute('aria-label', isMuted() ? 'Turn sound on' : 'Turn sound off');
+  };
   const muteBtn = h('button.icon-btn', {
+    'aria-label': isMuted() ? 'Turn sound on' : 'Turn sound off',
     onClick: () => { setMuted(!isMuted()); setMuteIcon(); playSfx('ui'); },
   });
   setMuteIcon();
@@ -58,6 +62,7 @@ export function renderMenu() {
       h('div.menu-row', {},
         muteBtn,
         h('button.icon-btn', {
+          'aria-label': 'Reset all progress',
           onClick: () => {
             if (confirm('Reset ALL progress? This cannot be undone!')) { resetAll(); location.reload(); }
           },
@@ -75,6 +80,10 @@ export function renderWorldMap() {
     const stars = wl.reduce((a, l) => a + (state.stars[l.id] || 0), 0);
     const unlocked = worldUnlocked(w.n, ctx.allLevels);
     return h(`button.world-card${unlocked ? '' : '.locked'}`, {
+      disabled: !unlocked,
+      'aria-label': unlocked
+        ? `World ${w.n}: ${w.name}. ${done} of 12 levels complete, ${stars} of 36 stars.`
+        : `World ${w.n}: ${w.name}. Locked. Complete 9 levels in the previous world to unlock.`,
       style: { '--wc': w.color },
       onClick: () => {
         if (!unlocked) { playSfx('fail'); return; }
@@ -111,6 +120,10 @@ export function renderLevels() {
     const unlocked = levelUnlocked(lv, ctx.allLevels);
     const stars = state.stars[lv.id] || 0;
     return h(`button.level-card${unlocked ? '' : '.locked'}${state.perfect[lv.id] ? '.perfect' : ''}`, {
+      disabled: !unlocked,
+      'aria-label': unlocked
+        ? `Level ${lv.index}: ${lv.name}. ${stars} of 3 stars${state.perfect[lv.id] ? ', perfect' : ''}.`
+        : `Level ${lv.index}: ${lv.name}. Locked. Complete the previous level to unlock.`,
       onClick: () => {
         if (!unlocked) { playSfx('fail'); return; }
         playSfx('run');
@@ -208,7 +221,13 @@ export function renderCharacters() {
     else if (owned) action = h('button.btn.green', { onClick: () => { selectCharacter(c.id); playSfx('select'); rerender(); } }, 'Choose');
     else action = h('button.btn.orange', {
       onClick: () => {
-        if (buyCharacter(c)) { playSfx('buy'); selectCharacter(c.id); ctx.onPurchase(); }
+        if (buyCharacter(c)) {
+          playSfx('buy');
+          selectCharacter(c.id);
+          ctx.onPurchase();
+          ctx.show('characters');
+          return;
+        }
         else playSfx('fail');
         rerender();
       },

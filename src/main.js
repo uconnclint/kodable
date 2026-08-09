@@ -156,6 +156,7 @@ function startLevel(level) {
     run(program, cbs) {
       if (runCtl) runCtl.cancel();
       clearPreviewPath();
+      setupBoard();
       if (stopIdle) { stopIdle(); stopIdle = null; }
       const res = runProgram(parsed, program);
       runCtl = playRun(bloop, parsed, res, {

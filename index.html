@@ -11,9 +11,10 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <canvas id="gl"></canvas>
-  <div id="app"></div>
-  <div id="toasts"></div>
+  <a class="skip-link" href="#app">Skip to game controls</a>
+  <canvas id="gl" aria-hidden="true"></canvas>
+  <main id="app" tabindex="-1"></main>
+  <div id="toasts" aria-label="Game notifications"></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
