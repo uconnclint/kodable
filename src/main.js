@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Clint McLeod. All rights reserved.
 // Blooptopia 3D — bootstrap & orchestration.
 import * as THREE from 'three';
 import { initRenderer, applyTheme, frameView, onFrame } from './engine/renderer.js';

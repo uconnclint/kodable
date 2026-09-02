@@ -106,6 +106,10 @@ span.ui-icon-fallback { line-height: 1; width: auto; height: auto; }
   border-bottom: 1px dashed rgba(239,233,255,0.5); padding-bottom: 1px;
 }
 .guide-link:hover, .guide-link:focus-visible { opacity: 1; }
+.copyright {
+  position: absolute; left: 0; right: 0; bottom: 10px; text-align: center;
+  font-family: var(--font); color: #efe9ff; font-size: 12px; opacity: 0.45; pointer-events: none;
+}
 @keyframes bob { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-10px);} }
 
 /* ---------- panels (worldmap / levels / achievements / badges / chars) ---------- */

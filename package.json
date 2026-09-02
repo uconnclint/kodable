@@ -10,8 +10,8 @@
     "validate": "node tools/validate.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Clint McLeod <clint@mrmsgames.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "dependencies": {
     "three": "^0.185.1",

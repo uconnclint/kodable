@@ -70,6 +70,7 @@ export function renderMenu() {
       ),
       h('a.guide-link', { href: './teacher-guide.html', target: '_blank', rel: 'noopener' }, '🍎 Grown-Ups’ Corner (Teacher Guide & Standards)'),
     ),
+    h('div.copyright', {}, '© 2026 Clint McLeod'),
   );
 }
 

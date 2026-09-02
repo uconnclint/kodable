@@ -1,5 +1,7 @@
 # 🟣 Blooptopia 3D
 
+Copyright (c) 2026 Clint McLeod. All rights reserved.
+
 A AAA-styled, flat-shaded low-poly **3D coding adventure for kids** — you
 pre-program a bouncy ball hero (a Bloop!) with direction commands, color
 conditions, loops, and functions to roll through floating-island mazes,
