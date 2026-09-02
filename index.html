@@ -9,12 +9,108 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
+  <style>
+    /* Inlined so the fallback still styles itself if the stylesheet fails. */
+    #boot-error {
+      position: fixed; inset: 0; z-index: 9999; display: none;
+      align-items: center; justify-content: center; padding: 24px;
+      background: #0e0b1e; color: #2a2440; overflow: auto;
+      font-family: 'Fredoka', 'Arial Rounded MT Bold', -apple-system, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    #boot-error.show { display: flex; }
+    #boot-error .card {
+      background: #fff; border-radius: 18px; padding: 28px 26px;
+      max-width: 560px; width: 100%; text-align: center;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, 0.18);
+    }
+    #boot-error h1 { font-size: 26px; margin: 0 0 10px; color: #5a3fd6; }
+    #boot-error p { font-size: 17px; line-height: 1.45; margin: 0 0 12px; }
+    #boot-error .detail {
+      font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.4;
+      background: #f2f0fa; border-radius: 10px; padding: 10px 12px;
+      text-align: left; color: #554a77; word-break: break-word; white-space: pre-wrap;
+    }
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#app">Skip to game controls</a>
   <canvas id="gl" aria-hidden="true"></canvas>
   <main id="app" tabindex="-1"></main>
   <div id="toasts" aria-label="Game notifications"></div>
+
+  <!-- Shown only when the game fails to start, so a broken device never just
+       renders a blank purple screen. Markup lives in the HTML (not JS) so it
+       survives a total script failure. -->
+  <div id="boot-error" role="alert">
+    <div class="card">
+      <h1>Blooptopia couldn't start</h1>
+      <p id="boot-error-msg">This device can't run the game right now.</p>
+      <p>Ask a grown-up to update this iPad to <strong>iPadOS 15 or newer</strong>, or try a different browser.</p>
+      <div class="detail" id="boot-error-detail"></div>
+    </div>
+  </div>
+
   <script type="module" src="/src/main.js"></script>
+
+  <!--
+    Boot watchdog. Deliberately ES5-only (var, no arrow functions, no template
+    literals) with no `type="module"`, so it parses and runs on the very
+    browsers that are too old to parse the game bundle. Classic scripts run
+    before deferred modules, so the listeners are installed in time.
+  -->
+  <script>
+    (function () {
+      var shown = false;
+      var notes = [];
+
+      function show(message) {
+        if (shown) return;
+        shown = true;
+        var box = document.getElementById('boot-error');
+        var msg = document.getElementById('boot-error-msg');
+        var detail = document.getElementById('boot-error-detail');
+        if (!box) return;
+        if (msg && message) msg.textContent = message;
+        if (detail) {
+          notes.push('device: ' + navigator.userAgent);
+          detail.textContent = notes.join('\n\n');
+        }
+        box.className = 'show';
+      }
+
+      window.__blooptopiaFail = show;
+
+      window.addEventListener('error', function (e) {
+        // Resource errors (a failed <img>) bubble here too but carry no
+        // `message`; only treat real script errors as fatal.
+        if (!e || !e.message) return;
+        notes.push(e.message + (e.filename ? '\n' + e.filename + ':' + e.lineno : ''));
+        show('The game hit an error while loading.');
+      }, true);
+
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e && e.reason;
+        notes.push('unhandled: ' + ((r && r.message) || String(r)));
+        show('The game hit an error while loading.');
+      });
+
+      // Nothing above fires for a module that fails to *parse* in some
+      // browsers, so also fail open on a timeout.
+      window.addEventListener('load', function () {
+        window.setTimeout(function () {
+          if (window.__blooptopiaBooted) return;
+          notes.push('the game code never finished loading (timed out after 12s)');
+          show('This iPad’s software is too old to run Blooptopia.');
+        }, 12000);
+      });
+    })();
+  </script>
+
+  <!-- Browsers with no ES-module support at all (Safari < 10.1) skip the
+       module above entirely and would otherwise show nothing. -->
+  <script nomodule>
+    window.__blooptopiaFail && window.__blooptopiaFail('This iPad’s software is too old to run Blooptopia.');
+  </script>
 </body>
 </html>

@@ -20,6 +20,20 @@ let elapsedTime = 0;
 
 export function initRenderer() {
   const canvas = document.getElementById('gl');
+
+  // three.js needs WebGL2, which only arrived in iPadOS 15. Left unhandled the
+  // constructor throws deep inside three and the page is simply blank, so
+  // surface it as the friendly boot-failure screen instead. The probe uses a
+  // throwaway canvas: calling getContext on the real one would pin the default
+  // attributes and silently drop `antialias` below.
+  const probe = document.createElement('canvas').getContext('webgl2');
+  if (!probe) {
+    const fail = globalThis.__blooptopiaFail;
+    if (fail) fail('This device\u2019s graphics support is too old to run Blooptopia.');
+    throw new Error('WebGL2 is not available on this device.');
+  }
+  probe.getExtension('WEBGL_lose_context')?.loseContext();
+
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;

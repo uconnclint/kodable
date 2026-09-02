@@ -216,3 +216,8 @@ void getCurrentWorldModel; void rollBody; void playSfx;
 
 // go!
 show('menu');
+
+// Tells the boot watchdog in index.html that the bundle parsed and ran, so it
+// stays quiet. Anything that stops us reaching this line shows the failure
+// screen instead of a blank page.
+globalThis.__blooptopiaBooted = true;
