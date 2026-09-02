@@ -46,7 +46,7 @@
     <div class="card">
       <h1>Blooptopia couldn't start</h1>
       <p id="boot-error-msg">This device can't run the game right now.</p>
-      <p>Ask a grown-up to update this iPad to <strong>iPadOS 15 or newer</strong>, or try a different browser.</p>
+      <p id="boot-error-advice">Ask a grown-up for help.</p>
       <div class="detail" id="boot-error-detail"></div>
     </div>
   </div>
@@ -64,14 +64,25 @@
       var shown = false;
       var notes = [];
 
-      function show(message) {
+      // Advice depends on *why* we failed. Telling a teacher to update the OS
+      // when the real fault is a bad deploy sends them down the wrong path.
+      var ADVICE = {
+        update: 'Ask a grown-up to update this device. iPads need iPadOS 15 or ' +
+                'newer; Chromebooks need a recent version of Chrome.',
+        reload: 'Ask a grown-up to reload the page. If it keeps happening, the ' +
+                'game may need to be published again.'
+      };
+
+      function show(message, adviceKey) {
         if (shown) return;
         shown = true;
         var box = document.getElementById('boot-error');
         var msg = document.getElementById('boot-error-msg');
+        var advice = document.getElementById('boot-error-advice');
         var detail = document.getElementById('boot-error-detail');
         if (!box) return;
         if (msg && message) msg.textContent = message;
+        if (advice) advice.textContent = ADVICE[adviceKey] || ADVICE.reload;
         if (detail) {
           notes.push('device: ' + navigator.userAgent);
           detail.textContent = notes.join('\n\n');
@@ -86,22 +97,23 @@
         // `message`; only treat real script errors as fatal.
         if (!e || !e.message) return;
         notes.push(e.message + (e.filename ? '\n' + e.filename + ':' + e.lineno : ''));
-        show('The game hit an error while loading.');
+        show('The game hit an error while loading.', 'reload');
       }, true);
 
       window.addEventListener('unhandledrejection', function (e) {
         var r = e && e.reason;
         notes.push('unhandled: ' + ((r && r.message) || String(r)));
-        show('The game hit an error while loading.');
+        show('The game hit an error while loading.', 'reload');
       });
 
       // Nothing above fires for a module that fails to *parse* in some
-      // browsers, so also fail open on a timeout.
+      // browsers, so also fail open on a timeout. A silent no-show like that
+      // is almost always a browser too old for the bundle's syntax.
       window.addEventListener('load', function () {
         window.setTimeout(function () {
           if (window.__blooptopiaBooted) return;
           notes.push('the game code never finished loading (timed out after 12s)');
-          show('This iPad’s software is too old to run Blooptopia.');
+          show('This device\u2019s web browser is too old to run Blooptopia.', 'update');
         }, 12000);
       });
     })();
@@ -110,7 +122,7 @@
   <!-- Browsers with no ES-module support at all (Safari < 10.1) skip the
        module above entirely and would otherwise show nothing. -->
   <script nomodule>
-    window.__blooptopiaFail && window.__blooptopiaFail('This iPad’s software is too old to run Blooptopia.');
+    window.__blooptopiaFail && window.__blooptopiaFail('This device’s web browser is too old to run Blooptopia.', 'update');
   </script>
 </body>
 </html>

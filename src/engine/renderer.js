@@ -29,7 +29,7 @@ export function initRenderer() {
   const probe = document.createElement('canvas').getContext('webgl2');
   if (!probe) {
     const fail = globalThis.__blooptopiaFail;
-    if (fail) fail('This device\u2019s graphics support is too old to run Blooptopia.');
+    if (fail) fail('This device\u2019s graphics support is too old to run Blooptopia.', 'update');
     throw new Error('WebGL2 is not available on this device.');
   }
   probe.getExtension('WEBGL_lose_context')?.loseContext();
