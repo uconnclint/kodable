@@ -58,3 +58,34 @@ npm run build      # production build
 
 Levels live in `src/game/levels/world*.js` — see `docs/SPEC.md` for the full
 data format if you want to add your own.
+
+## Deploying
+
+**Always publish the contents of `dist/`, never the repo root.** The root
+`index.html` is the Vite dev entry: it points at `/src/main.js`, whose
+`import 'three'` is a bare specifier that only the dev server can resolve. Serve
+it as static files and every browser dies with
+`Module name, 'three' does not resolve to a valid URL` — a blank screen.
+
+On Cloudflare Pages, the project's build configuration must be:
+
+| Setting | Value |
+|---|---|
+| Build command | `npm run build` |
+| Output directory | `dist` |
+
+`.node-version` pins Node to 22.12, the minimum Vite 8 accepts; without it the
+Pages default image can be too old and the build fails.
+
+### Browser support
+
+School iPads and Chromebooks are the target, and many are frozen on old OS
+releases, so `vite.config.js` pins the build down to ES2019 rather than Vite's
+default `ios16.4` baseline. Do not remove that target: three.js ships class
+static blocks that iPadOS below 16.4 cannot even parse, which fails silently as
+a blank screen. The real floor is **iPadOS 15 / Chrome 56**, set by three.js
+requiring WebGL2.
+
+If the game ever fails to start, it now shows a readable card naming the cause
+and the device, instead of a blank screen — see the boot watchdog at the bottom
+of `index.html`.
