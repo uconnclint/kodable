@@ -59,16 +59,22 @@ export function renderMenu() {
         h('button.btn.orange', { onClick: () => { playSfx('ui'); ctx.show('achievements'); } }, icon('trophy'), ' Awards'),
         h('button.btn', { onClick: () => { playSfx('ui'); ctx.show('badges'); } }, icon('badge'), ' Badges'),
       ),
-      h('div.menu-row', {},
-        muteBtn,
-        h('button.icon-btn', {
-          'aria-label': 'Reset all progress',
+      h('div.menu-row', {}, muteBtn),
+      // The two grown-up affordances, together and away from the play buttons.
+      // Wiping every star, badge and purchase used to be an unlabelled 52px
+      // square sitting twelve pixels from the sound toggle, with identical
+      // treatment — one mis-tap from a five-year-old away from erasing a term's
+      // work. It now says what it does, in a warning colour, next to the other
+      // thing on this screen written for an adult.
+      h('div.adult-row', {},
+        h('a.guide-link', { href: './teacher-guide.html', target: '_blank', rel: 'noopener' }, '🍎 Grown-Ups’ Corner — Teacher Guide'),
+        h('button.danger-link', {
+          'aria-label': 'Reset all progress. This erases every star, badge and bloop.',
           onClick: () => {
-            if (confirm('Reset ALL progress? This cannot be undone!')) { resetAll(); location.reload(); }
+            if (confirm('Reset ALL progress? Every star, badge and bloop will be erased. This cannot be undone!')) { resetAll(); location.reload(); }
           },
-        }, icon('trash')),
+        }, icon('trash'), ' Reset all progress'),
       ),
-      h('a.guide-link', { href: './teacher-guide.html', target: '_blank', rel: 'noopener' }, '🍎 Grown-Ups’ Corner (Teacher Guide & Standards)'),
     ),
     h('div.copyright', {}, '© 2026 Clint McLeod'),
   );
@@ -99,6 +105,9 @@ export function renderWorldMap() {
       h('div.w-sub', {}, w.sub),
       h('div.w-progress', {}, h('div', { style: { width: `${(done / 12) * 100}%` } })),
       h('div.w-stats', {}, h('span', {}, `${done}/12 levels`), h('span', {}, icon('star-filled'), ` ${stars}/36`)),
+      // A locked card should explain itself. Previously the only hint was a
+      // translucent veil with a padlock, which read as a rendering fault.
+      unlocked ? null : h('div.w-locked-note', {}, icon('lock'), `Finish 9 levels in World ${w.n - 1} to open this`),
       unlocked ? null : h('div.lock-badge', {}, icon('lock')),
     );
   });
@@ -132,9 +141,15 @@ export function renderLevels() {
         ctx.startLevel(lv);
       },
     },
-      h('div.l-num', {}, unlocked ? String(lv.index) : icon('lock')),
+      // The numeral always shows. Replacing it with a padlock made eleven of
+      // the twelve cards in a world identical, which erased the one thing the
+      // screen is teaching — that levels run in an order. The lock is a corner
+      // chip instead, exactly as it is on the world cards.
+      h('div.l-num', {}, String(lv.index)),
       h('div.l-name', {}, lv.name),
       h('div.l-stars', {}, ...starRow(stars, 3)),
+      unlocked ? null : h('div.lock-badge', { 'aria-hidden': 'true' }, icon('lock')),
+      state.perfect[lv.id] ? h('div.l-perfect', { 'aria-hidden': 'true' }, icon('perfect')) : null,
     );
   });
 
@@ -156,8 +171,13 @@ export function renderAchievements() {
     .sort((a, b) => (state.achievementsUnlocked[b.id] ? 1 : 0) - (state.achievementsUnlocked[a.id] ? 1 : 0))
     .map((a) => {
       const got = !!state.achievementsUnlocked[a.id];
+      // The medal shows whether or not it is earned, drained of colour until
+      // it is. Sixty-three identical question marks on identical grey plates
+      // hid the entire bronze/silver/gold ladder — which is the one thing that
+      // makes a wall of awards feel like a wall worth climbing.
       return h(`div.ach-card.t-${a.tier}${got ? '' : '.locked'}`, {},
-        h('div.a-icon', {}, got ? icon(`medal-${a.tier}`) : icon('question')),
+        h('div.a-icon', {}, icon(`medal-${a.tier}`),
+          got ? null : h('span.a-lock', { 'aria-hidden': 'true' }, icon('lock'))),
         h('div', {}, h('h4', {}, a.name), h('p', {}, a.desc)),
         h('div.a-coins', {}, `+${a.coins} `, icon('coin')),
       );
@@ -168,7 +188,7 @@ export function renderAchievements() {
       h('div.title', {}, icon('trophy'), ' Achievements'),
       h('div.spacer'), coinPill(state.coins),
     ),
-    h('div.progress-line', {}, `${unlockedCount} / ${achievements.length} unlocked`),
+    h('div.progress-line', {}, h('span', {}, `${unlockedCount} of ${achievements.length} unlocked`)),
     h('div.panel-scroll', {}, h('div.ach-grid', {}, cards)),
   );
 }
@@ -178,10 +198,14 @@ export function renderBadges() {
   const got = badges.filter((b) => state.badgesEarned[b.id]).length;
   const cards = badges.map((b) => {
     const earned = !!state.badgesEarned[b.id];
+    // Same art whether earned or not, greyed until it is. Swapping every
+    // unearned badge for a padlock turned a wall of twenty-two distinct awards
+    // into twenty-two copies of one shape.
     return h(`div.badge-card${earned ? '' : '.locked'}`, {},
-      h('div.b-icon', {}, earned ? icon('badge') : icon('lock')),
+      h('div.b-icon', {}, icon('badge')),
       h('h4', {}, b.name),
       h('p', {}, b.desc),
+      earned ? null : h('div.lock-badge', { 'aria-hidden': 'true' }, icon('lock')),
     );
   });
 
@@ -190,7 +214,7 @@ export function renderBadges() {
       h('div.title', {}, icon('badge'), ' Badge Wall'),
       h('div.spacer'),
     ),
-    h('div.progress-line', {}, `${got} / ${badges.length} earned`),
+    h('div.progress-line', {}, h('span', {}, `${got} of ${badges.length} earned`)),
     h('div.panel-scroll', {}, h('div.badge-grid', {}, cards)),
   );
 }
@@ -208,18 +232,21 @@ export function renderCharacters() {
       return h(`button.char-card${c.id === selectedId ? '.selected' : ''}${owned ? '.owned' : '.locked'}`, {
         onClick: () => { playSfx('select'); selectedId = c.id; rerender(); ctx.previewCharacter(c); },
       },
-        h('div.c-ball', { style: { '--cb': c.colors.body } }),
+        // Body *and* accent, because on hue alone Mossy, Minty and Zapp were
+        // three greens and Rosie, Coral and Bubbles three pinks — a difference
+        // a colour-blind child cannot see at all. The eyes come from CSS.
+        h('div.c-ball', { style: { '--cb': c.colors.body, '--cb2': c.colors.accent } }),
         h('h4', {}, c.name),
         owned
           ? h('div.c-cost', {}, c.id === state.currentChar ? '✓ Active' : 'Owned')
-          : h('div.c-cost', {}, icon('coin'), ` ${c.cost}`),
+          : h(`div.c-cost${state.coins >= c.cost ? '.afford' : ''}`, {}, icon('coin'), ` ${c.cost}`),
       );
     }));
 
     const c = characters.find((x) => x.id === selectedId);
     const owned = state.unlockedChars.includes(c.id);
     let action;
-    if (owned && c.id === state.currentChar) action = h('button.btn.green', { disabled: true }, '✓ Active');
+    if (owned && c.id === state.currentChar) action = h('button.btn.green.state-on', { disabled: true }, '✓ Active');
     else if (owned) action = h('button.btn.green', { onClick: () => { selectCharacter(c.id); playSfx('select'); rerender(); } }, 'Choose');
     else action = h('button.btn.orange', {
       onClick: () => {

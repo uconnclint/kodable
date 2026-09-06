@@ -27,12 +27,16 @@ function drain() {
   const t = queue.shift();
   showing++;
   playSfx(t.kind && t.kind.startsWith('Badge') ? 'unlock' : 'achievement');
-  const el = h('div.toast', { role: 'status', 'aria-live': 'polite' },
+  // The accent rail colour tells badges and achievements apart at a glance.
+  const el = h(`div.toast.k-${t.kind && t.kind.startsWith('Badge') ? 'badge' : 'ach'}`, { role: 'status', 'aria-live': 'polite' },
     h('div.t-icon', {}, t.icon || uiIcon('trophy')),
     h('div', {},
       h('h5', {}, t.kind || 'Unlocked'),
       h('p', {}, t.title),
-      t.sub ? h('h5', {}, t.sub) : null,
+      // Not an <h5>. Reusing the kicker element put the reward — "+10 coins" —
+      // through 11px uppercase with 0.08em tracking, and ran a whole sentence
+      // of badge description through the same treatment.
+      t.sub ? h('p.t-sub', {}, t.sub) : null,
     ),
   );
   document.getElementById('toasts').append(el);

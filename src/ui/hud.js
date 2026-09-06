@@ -4,9 +4,41 @@ import { h } from './dom.js';
 import { icon, dirArrowIcon, coinPill, starRow } from './icons.js';
 import { playSfx } from '../audio/sfx.js';
 import { state } from '../game/save.js';
+import { TILE_COLORS } from '../engine/renderer.js';
+import * as engineWorld from '../engine/world.js';
 
 const dirIcon = (d) => dirArrowIcon(d);
 const DIR_NAME = { U: 'Up', D: 'Down', L: 'Left', R: 'Right' };
+
+// A child learns "pink means turn left" by matching the dot on the binder to
+// the tile on the board, so those two colours have to be the *same* colour.
+// They were not: the stylesheet carried its own copy of the four hexes while
+// the board applied an albedo gain on top of them, and the pair had visibly
+// drifted. The values now come off the engine and are published as custom
+// properties, so the CSS can never hold a second opinion.
+//
+// world.js publishes the post-gain albedo as TILE_UI_COLORS, which is what is
+// actually on screen; renderer.js's raw TILE_COLORS is the fallback for a
+// build where that export is not present.
+function conditionColorSource() {
+  const tinted = engineWorld.TILE_UI_COLORS;
+  return tinted && typeof tinted === 'object' && Object.keys(tinted).length ? tinted : TILE_COLORS;
+}
+
+function toCssColor(v) {
+  if (typeof v === 'number') return `#${v.toString(16).padStart(6, '0')}`;
+  if (typeof v === 'string') return v;
+  if (v && typeof v.getHexString === 'function') return `#${v.getHexString()}`;
+  return null;
+}
+
+function syncConditionColors() {
+  const root = document.documentElement;
+  for (const [key, value] of Object.entries(conditionColorSource())) {
+    const css = toCssColor(value);
+    if (css) root.style.setProperty(`--cond-${key}`, css);
+  }
+}
 
 function learningPrompt(level) {
   if (level.world === 1 && level.index <= 2) return level.intro;
@@ -26,6 +58,7 @@ export function initHud(c) { ctx = c; }
 export function renderPlay(session) {
   const { level } = session;
   const a = level.allowed;
+  syncConditionColors();
 
   const program = { main: [], functions: a.functions ? [[]] : [], conditions: [] };
   let activeTray = 'main'; // 'main' | 'fn' | loopToken reference
@@ -34,6 +67,7 @@ export function renderPlay(session) {
   let flashTimer = null;
   let lastExecuting = null;
   let hintLevel = 0;
+  let justAdded = null; // token placed by the most recent edit, for the pop-in
   const undoStack = [];
 
   const cloneProgram = () => JSON.parse(JSON.stringify(program));
@@ -59,23 +93,41 @@ export function renderPlay(session) {
 
   // ----- trays -----
   const mainSlots = h('div.slot-row');
-  const mainCount = h('span', {}, '');
-  const mainTray = h('div.tray.clickable', { role: 'group', 'aria-label': 'Main program', onClick: () => setActive('main') },
-    h('div.tray-label', {}, 'Program'), mainSlots, mainCount);
+  // The counter lives in the row's head, directly under the label, so program
+  // length reads as a heading-level fact rather than as fine print floating
+  // off at the far edge of a wide bar.
+  const mainCount = h('span.tray-count', { role: 'status' });
+  const mainTray = h('div.tray.row-main.clickable', {
+    role: 'group', 'aria-label': 'Main program', tabindex: '0',
+    onClick: () => setActive('main'),
+    onKeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setActive('main'); } },
+  },
+    h('div.tray-head', {}, h('div.tray-label', {}, 'Program'), mainCount), mainSlots);
 
-  let fnTray = null, fnSlots = null;
+  // F1 is the Program row's twin: same chips, same wells, same gesture. It
+  // therefore gets the same counter and the same honest capacity — it used to
+  // draw three wells for a surface that holds eight, and carry no count at
+  // all, so two rows with one visual grammar were quietly telling a child two
+  // different stories.
+  const FN_CAPACITY = 8;
+  let fnTray = null, fnSlots = null, fnCount = null;
   if (a.functions) {
     fnSlots = h('div.slot-row');
-    fnTray = h('div.tray.clickable', { role: 'group', 'aria-label': 'Function F1', onClick: () => setActive('fn') },
-      h('div.tray-label', {}, 'F1 ', icon('function')), fnSlots);
+    fnCount = h('span.tray-count', { role: 'status' });
+    fnTray = h('div.tray.row-fn.clickable', {
+      role: 'group', 'aria-label': 'Function F1', tabindex: '0',
+      onClick: () => setActive('fn'),
+      onKeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setActive('fn'); } },
+    },
+      h('div.tray-head', {}, h('div.tray-label', {}, 'F1 ', icon('function')), fnCount), fnSlots);
   }
 
   let condTray = null;
   const condPicks = {};
   if (a.conditions.length) {
-    condTray = h('div.tray', {}, h('div.tray-label', {}, 'If color'),
+    condTray = h('div.tray.row-cond', {}, h('div.tray-head', {}, h('div.tray-label', {}, 'If color')),
       ...a.conditions.map((color) => {
-        const arrowEl = h('span.cond-arrow', {}, '·');
+        const arrowEl = h('span.cond-arrow.empty', {}, '·');
         const slot = h('button.cond-slot', {
           'aria-label': `Set ${colorName(color)} condition. No direction selected.`,
           onClick: (e) => { e.stopPropagation(); cycleCondition(color, arrowEl); },
@@ -83,31 +135,41 @@ export function renderPlay(session) {
         condPicks[color] = arrowEl;
         return slot;
       }),
+      // The one tray with no hint and no counter, sitting directly above a row
+      // that says "Tap a command below to add it here" — so a child had no
+      // reason to think the dashed box next to the dot did anything at all.
+      h('span.slot-hint', {}, 'Tap a colour to pick which way it turns'),
     );
   }
 
   // ----- palette -----
   const palette = h('div.palette', {},
-    h('div.tray-label', {}, 'Add'),
     ...a.dirs.map((d) =>
       h(`button.token.d-${d}`, { 'aria-label': `Add ${DIR_NAME[d]} command`, onClick: () => addDir(d) }, dirIcon(d))),
-    a.loops ? h('button.token.loop-block', { 'aria-label': 'Add loop block', onClick: addLoop, style: { padding: '4px 12px' } }, icon('loop'), ' loop') : null,
-    a.functions ? h('button.token.call-token', { 'aria-label': 'Add F1 function call', onClick: addCall, style: { width: 'auto', padding: '0 12px' } }, 'F1') : null,
+    a.loops ? h('button.token.loop-block', { 'aria-label': 'Add loop block', onClick: addLoop }, icon('loop'), ' loop') : null,
+    a.functions ? h('button.token.call-token', { 'aria-label': 'Add F1 function call', onClick: addCall }, 'F1') : null,
   );
 
   const prompt = learningPrompt(level);
   const msg = h('div.hud-msg', { role: 'status', 'aria-live': 'polite' }, prompt || 'Build a program, then Preview or Run!');
   const coins = coinPill(state.coins);
+  // One chip, and only the fact that changes from level to level. "Reach the
+  // exit" and "Collect 3 stars" were true of all sixty levels, restated on
+  // every one of them, and cost the board a strip of height each time.
   const goals = h('div.level-goals', {},
-    h('span', {}, 'Reach the exit'),
-    h('span', {}, 'Collect 3 stars'),
     h('span', {}, `Perfect: ≤ ${level.parCommands} main block${level.parCommands === 1 ? '' : 's'}`),
   );
 
   const runBtn = h('button.btn.big.green', { onClick: run }, icon('run'), ' RUN');
   const previewBtn = h('button.btn.big.blue', { onClick: preview }, icon('preview'), ' Preview');
   const hintBtn = h('button.btn.ghost.hint-btn', { onClick: hint }, icon('question'), ' Hint');
-  const undoBtn = h('button.btn.ghost.utility-btn', { 'aria-label': 'Undo last program edit', onClick: undo }, '↶ Undo');
+  // All four utility glyphs come from the same drawn set, at the same weight,
+  // and the stylesheet drains them to one ink. Undo was a bare '↶' character
+  // rendered in whatever fallback font the device had, next to a thin arc, an
+  // illustrated broom and a solid badge — four idioms in one row of four
+  // buttons. Undo is now the Reset arrow mirrored, which is also exactly what
+  // the gesture is.
+  const undoBtn = h('button.btn.ghost.utility-btn', { 'aria-label': 'Undo last program edit', onClick: undo }, icon('replay', 'flip-x'), ' Undo');
   const resetBtn = h('button.btn.ghost.utility-btn', { 'aria-label': 'Reset Bloop to the start', onClick: () => { if (!running) { session.resetBoard(); flash('Bloop is back at the start.'); } } }, icon('replay'), ' Reset');
   const clearBtn = h('button.btn.ghost.utility-btn', { onClick: () => {
     if (!running && (program.main.length || (fnSlots && program.functions[0].length))) {
@@ -119,7 +181,7 @@ export function renderPlay(session) {
       playSfx('remove');
       render();
     }
-  } }, icon('clear'), ' Clear');
+  } }, icon('trash'), ' Clear');
 
   const el = h('div.screen#screen-play', {},
     h('div.hud-top', {},
@@ -128,18 +190,26 @@ export function renderPlay(session) {
       h('div.spacer', { style: { flex: 1 } }),
       coins,
     ),
-    msg,
-    goals,
+    h('div.hud-coach', {}, msg, goals),
     h('div', { style: { flex: 1 }, onClick: () => {} }),
+    // The run controls live *inside* the console card, as its right-hand
+    // column on a wide screen. Two things fall out of that: the card is no
+    // longer 60% blank paper on its right side, and the HUD gives a whole row
+    // of height back to the board. DOM order is unchanged — the grid places
+    // the column, so reading and tab order still run trays, palette, controls.
     h('div.hud-bottom', {},
-      condTray,
-      fnTray,
-      mainTray,
-      h('div.tray', {}, palette),
-      h('div.run-controls', {},
-        h('div.utility-controls', {}, undoBtn, resetBtn, clearBtn, hintBtn),
-        previewBtn,
-        runBtn,
+      h('div.console', {},
+        h('div.console-rows', {},
+          condTray,
+          fnTray,
+          mainTray,
+          h('div.tray.row-palette', { role: 'group', 'aria-label': 'Command palette' },
+            h('div.tray-head', {}, h('div.tray-label', {}, 'Add')), palette),
+        ),
+        h('div.run-controls', {},
+          h('div.utility-controls', {}, undoBtn, resetBtn, clearBtn, hintBtn),
+          h('div.hero-controls', {}, previewBtn, runBtn),
+        ),
       ),
     ),
   );
@@ -160,7 +230,8 @@ export function renderPlay(session) {
     if (target === program.main && program.main.length >= a.maxMain) { flash(`Max ${a.maxMain} commands — try loops or fewer moves!`); playSfx('fail'); return; }
     if (target !== program.main && target.length >= 8) { playSfx('fail'); return; }
     remember();
-    target.push({ t: 'dir', d });
+    justAdded = { t: 'dir', d };
+    target.push(justAdded);
     playSfx('place');
     render();
   }
@@ -170,6 +241,7 @@ export function renderPlay(session) {
     if (program.main.length >= a.maxMain) { flash(`Max ${a.maxMain} commands!`); playSfx('fail'); return; }
     remember();
     const tok = { t: 'loop', n: 2, body: [] };
+    justAdded = tok;
     program.main.push(tok);
     activeTray = tok;
     playSfx('place');
@@ -180,7 +252,8 @@ export function renderPlay(session) {
     if (running) return;
     if (program.main.length >= a.maxMain) { flash(`Max ${a.maxMain} commands!`); playSfx('fail'); return; }
     remember();
-    program.main.push({ t: 'call', f: 0 });
+    justAdded = { t: 'call', f: 0 };
+    program.main.push(justAdded);
     playSfx('place');
     render();
   }
@@ -196,6 +269,7 @@ export function renderPlay(session) {
     if (idx >= 0) program.conditions.splice(idx, 1);
     if (next) program.conditions.push({ color, d: next });
     arrowEl.replaceChildren(next ? dirIcon(next) : document.createTextNode('·'));
+    arrowEl.classList.toggle('empty', !next);
     arrowEl.parentElement.setAttribute('aria-label', `Set ${colorName(color)} condition. ${next ? `${DIR_NAME[next]} selected.` : 'No direction selected.'}`);
     playSfx('select');
   }
@@ -219,12 +293,12 @@ export function renderPlay(session) {
   // ----- rendering -----
   function tokenEl(tok, arr) {
     if (tok.t === 'dir') {
-      const e = h(`button.token.d-${tok.d}`, { 'aria-label': `Remove ${DIR_NAME[tok.d]} command`, onClick: (ev) => { ev.stopPropagation(); removeToken(arr, tok); } }, dirIcon(tok.d));
+      const e = h(`button.token.d-${tok.d}${tok === justAdded ? '.just-added' : ''}`, { 'aria-label': `Remove ${DIR_NAME[tok.d]} command`, onClick: (ev) => { ev.stopPropagation(); removeToken(arr, tok); } }, dirIcon(tok.d));
       tokenEls.set(tok, e);
       return e;
     }
     if (tok.t === 'call') {
-      const e = h('button.token.call-token', { 'aria-label': 'Remove F1 function call', style: { width: 'auto', padding: '0 12px' }, onClick: (ev) => { ev.stopPropagation(); removeToken(arr, tok); } }, 'F1');
+      const e = h(`button.token.call-token${tok === justAdded ? '.just-added' : ''}`, { 'aria-label': 'Remove F1 function call', onClick: (ev) => { ev.stopPropagation(); removeToken(arr, tok); } }, 'F1');
       tokenEls.set(tok, e);
       return e;
     }
@@ -233,59 +307,107 @@ export function renderPlay(session) {
       'aria-label': `Loop repeats ${tok.n} times. Increase repeat count.`,
       onClick: (ev) => { ev.stopPropagation(); if (!running) { remember(); tok.n = tok.n >= 5 ? 2 : tok.n + 1; playSfx('select'); render(); } },
     }, `×${tok.n}`);
+    // The well inside an open loop follows the same rule as the tray wells: it
+    // only beckons while this loop is the surface chips are landing in.
+    const loopActive = activeTray === tok;
     const body = h('div.loop-body', {},
       ...tok.body.map((b) => tokenEl(b, tok.body)),
-      tok.body.length === 0 ? h('span', { style: { fontSize: '12px', opacity: 0.8 } }, 'tap arrows…') : null,
+      tok.body.length === 0
+        ? h(`span.token.ghost-slot${loopActive ? '.next' : ''}`, { 'aria-hidden': 'true', style: { width: '40px', height: '40px', minWidth: '40px' } }, loopActive ? '+' : '')
+        : null,
     );
-    const del = h('button', { 'aria-label': 'Remove loop block', style: { fontSize: '13px', opacity: 0.85 }, onClick: (ev) => { ev.stopPropagation(); removeToken(program.main, tok); } }, '✕');
-    const e = h(`div.token.loop-block${activeTray === tok ? '' : ''}`, {
+    const del = h('button.loop-del', { 'aria-label': 'Remove loop block', onClick: (ev) => { ev.stopPropagation(); removeToken(program.main, tok); } }, '✕');
+    // `.editing` rather than an inline outline: the outline property is
+    // reserved for the focus ring, and mixing the two made keyboard focus on
+    // an open loop invisible.
+    const e = h(`div.token.loop-block${activeTray === tok ? '.editing' : ''}${tok === justAdded ? '.just-added' : ''}`, {
       role: 'button', tabindex: '0', 'aria-label': `Edit loop that repeats ${tok.n} times`,
       onClick: (ev) => { ev.stopPropagation(); setActive(tok); },
       onKeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setActive(tok); } },
-      style: activeTray === tok ? { outline: '3px solid #ffc93d' } : {},
     }, icon('loop'), countChip, body, del);
     tokenEls.set(tok, e);
     return e;
   }
 
+  // Every unused slot is drawn, numbered, and the first one of the *active*
+  // tray is highlighted. Showing the whole capacity is what makes program
+  // length legible to a five-year-old — far more than a "2/5" caption ever
+  // could — and it gives the tray an obvious "commands land here" affordance
+  // when it is empty.
+  //
+  // `isActive` matters: the highlight is a promise about where the next chip
+  // will land, and only one tray can keep that promise. Marking the first well
+  // of every tray put two identical pulsing purple targets on screen at once
+  // with only one of them live.
+  function ghostSlots(used, capacity, isActive) {
+    const out = [];
+    for (let i = used; i < capacity; i++) {
+      const next = isActive && i === used;
+      out.push(h(`span.token.ghost-slot${next ? '.next' : ''}`, { 'aria-hidden': 'true' }, next ? '+' : ''));
+    }
+    return out;
+  }
+
   function render() {
     session.clearPreview();
     tokenEls.clear();
+    // Strictly the main list — not "anything that isn't F1". While a loop is
+    // open its body is the insertion point, so the loop's own well beckons and
+    // this one must not, even though the main tray stays visually highlighted
+    // (the loop lives inside it).
+    const mainActive = activeTray === 'main';
     mainSlots.replaceChildren(
       ...program.main.map((tok) => tokenEl(tok, program.main)),
-      ...(program.main.length === 0 ? [h('span.token.ghost-slot', { style: { width: 'auto', padding: '0 10px' } }, 'tap arrows below')] : []),
+      ...ghostSlots(program.main.length, a.maxMain, mainActive),
+      ...(program.main.length === 0 ? [h('span.slot-hint', {}, 'Tap a command below to add it here')] : []),
     );
-    mainCount.textContent = `${program.main.length}/${a.maxMain}`;
-    mainCount.style.cssText = 'font-weight:700;font-size:13px;opacity:0.6;';
+    mainCount.replaceChildren(
+      h('span.tc-now', { 'aria-hidden': 'true' }, String(program.main.length)),
+      h('span.tc-max', { 'aria-hidden': 'true' }, `/${a.maxMain}`),
+      h('span.sr-only', {}, `${program.main.length} of ${a.maxMain} blocks used`),
+    );
+    mainCount.classList.toggle('full', program.main.length >= a.maxMain);
     mainTray.classList.toggle('active', activeTray === 'main' || (activeTray !== 'fn' && activeTray !== 'main'));
     if (fnTray) {
+      const fnLen = program.functions[0].length;
       fnSlots.replaceChildren(
         ...program.functions[0].map((tok) => tokenEl(tok, program.functions[0])),
-        ...(program.functions[0].length === 0 ? [h('span.token.ghost-slot', { style: { width: 'auto', padding: '0 10px' } }, 'teach F1 some moves')] : []),
+        ...ghostSlots(fnLen, FN_CAPACITY, activeTray === 'fn'),
+        ...(fnLen === 0 ? [h('span.slot-hint', {}, 'Teach F1 some moves')] : []),
       );
+      fnCount.replaceChildren(
+        h('span.tc-now', { 'aria-hidden': 'true' }, String(fnLen)),
+        h('span.tc-max', { 'aria-hidden': 'true' }, `/${FN_CAPACITY}`),
+        h('span.sr-only', {}, `${fnLen} of ${FN_CAPACITY} blocks used in F1`),
+      );
+      fnCount.classList.toggle('full', fnLen >= FN_CAPACITY);
       fnTray.classList.toggle('active', activeTray === 'fn');
       mainTray.classList.toggle('active', activeTray !== 'fn');
     }
     for (const [color, arrowEl] of Object.entries(condPicks)) {
       const selected = program.conditions.find((c) => c.color === color)?.d || null;
       arrowEl.replaceChildren(selected ? dirIcon(selected) : document.createTextNode('·'));
+      arrowEl.classList.toggle('empty', !selected);
       arrowEl.parentElement.setAttribute('aria-label', `Set ${colorName(color)} condition. ${selected ? `${DIR_NAME[selected]} selected.` : 'No direction selected.'}`);
     }
     undoBtn.disabled = undoStack.length === 0;
+    justAdded = null;
   }
 
-  function flash(text) {
-    msg.textContent = text;
-    msg.style.background = 'rgba(214,60,60,0.9)';
-    clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => { msg.textContent = prompt || ''; msg.style.background = ''; }, 2200);
+  // Tone is a class so the stylesheet owns the colours — the inline rgba()s
+  // this replaces were light enough that white text on them missed AA.
+  function setTone(tone) {
+    msg.classList.remove('tone-bad', 'tone-good', 'tone-warn');
+    if (tone) msg.classList.add(`tone-${tone}`);
   }
-  function verdict(text, good) {
+  function say(text, tone, holdMs) {
     msg.textContent = text;
-    msg.style.background = good ? 'rgba(46,160,80,0.94)' : 'rgba(224,132,44,0.94)';
+    setTone(tone);
     clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => { msg.textContent = prompt || ''; msg.style.background = ''; }, 4200);
+    flashTimer = setTimeout(() => { msg.textContent = prompt || ''; setTone(null); }, holdMs);
   }
+  function flash(text) { say(text, 'bad', 2200); }
+  function verdict(text, good) { say(text, good ? 'good' : 'warn', 4200); }
 
   function hint() {
     if (running) return;
@@ -326,6 +448,7 @@ export function renderPlay(session) {
     running = true;
     runBtn.disabled = true;
     playSfx('run');
+    setTone(null);
     msg.textContent = 'Go Bloop, go!';
     session.run(program, {
       onCommand(src) {
@@ -359,16 +482,16 @@ export function renderPlay(session) {
       h('div.modal', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Level results' },
         h('h2', {}, res.starsGot === 3 ? h('span', {}, icon('win'), ' Amazing!') : 'Level Complete!'),
         h('div.stars-row', {}, ...starRow(res.starsGot, 3)),
-        summary.perfect ? h('div.earn-line', { style: { color: '#e8a820' } }, icon('perfect'), ' PERFECT — under par!') : null,
+        summary.perfect ? h('div.earn-line.perfect', {}, icon('perfect'), ' PERFECT — under par!') : null,
         h('div.earn-line', {}, `+${summary.coins} `, icon('coin'), ' earned'),
         h('div.modal-btns', {},
-          h('button.btn.ghost', { style: { color: '#2a2440' }, onClick: () => {
+          h('button.btn.ghost', { onClick: () => {
             wrap.remove();
             session.replay();
             msg.textContent = prompt;
-            msg.style.background = '';
+            setTone(null);
           } }, icon('replay'), ' Replay'),
-          h('button.btn.ghost', { style: { color: '#2a2440' }, onClick: () => { wrap.remove(); session.exit(); } }, icon('back'), ' Levels'),
+          h('button.btn.ghost', { onClick: () => { wrap.remove(); session.exit(); } }, icon('back'), ' Levels'),
           session.hasNext() ? h('button.btn.green', { onClick: () => { wrap.remove(); session.next(); } }, 'Next ', icon('next')) : null,
         ),
       ),

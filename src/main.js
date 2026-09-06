@@ -221,3 +221,21 @@ show('menu');
 // stays quiet. Anything that stops us reaching this line shows the failure
 // screen instead of a blank page.
 globalThis.__blooptopiaBooted = true;
+
+// Automation hook for the visual-regression harness in `tools/shot.mjs`. It is
+// a handful of already-exported functions hung off one global: no gameplay
+// depends on it, and nothing reads it at runtime. Keeping it here (rather than
+// re-deriving the router in the harness) means screenshots always drive the
+// game through exactly the same code paths a player does.
+globalThis.__blooptopia = {
+  show,
+  startLevel,
+  allLevels,
+  levelAt: (world, index) => allLevels.find((l) => l.world === world && l.index === index),
+  runProgram: (program) => {
+    if (!session) return null;
+    return runProgram(session.parsed, program);
+  },
+  getSession: () => session,
+  scene,
+};

@@ -1,7 +1,42 @@
+/* ==========================================================================
+   Blooptopia interface
+   --------------------------------------------------------------------------
+   One design system for the whole 2D layer. Everything below keys off the
+   tokens in :root, so a colour, a shadow or a step of the type scale is
+   changed in exactly one place.
+
+   Three ideas drive the look:
+     1. Type is a modular scale on a 4px vertical grid, with two documented
+        half-steps (2px and 6px) that exist only for the interiors of small
+        chips, where a 4px jump is a visible 8px change in height. Nothing is
+        sized ad hoc: every padding, gap and radius below is a --s-* or --r-*
+        token, so the grid can be re-tuned in one place.
+     2. Depth comes from *layered, tinted* shadows (a tight contact shadow plus
+        a wide ambient one), never a single hard offset. Panels then read as
+        physical objects lit from above rather than rectangles with a drop line.
+     3. Controls have press physics. Every tappable thing moves under the
+        finger, which is most of what makes a toy interface feel alive.
+   ========================================================================== */
+
 :root {
   --font: 'Fredoka', 'Arial Rounded MT Bold', system-ui, sans-serif;
-  --ink: #2a2440;
-  --paper: rgba(255, 255, 255, 0.92);
+
+  /* ----- ink ----------------------------------------------------------- */
+  /* Three ranks of text colour instead of opacity. Opacity-dimmed text is
+     what makes a UI look washed out, and it quietly fails contrast. All three
+     clear WCAG AA on white (9.1:1 and 5.2:1 for the two secondaries). */
+  --ink: #241d3d;
+  --ink-2: #4a4270;
+  --ink-3: #6f688f;
+  --ink-inv: #ffffff;
+
+  /* ----- surfaces ------------------------------------------------------ */
+  --paper: #ffffff;
+  --paper-2: #f4f2fc;   /* recessed / inactive fills */
+  --hairline: rgba(36, 29, 61, 0.09);
+  --hairline-2: rgba(36, 29, 61, 0.16);
+
+  /* ----- brand --------------------------------------------------------- */
   --purple: #7c5cff;
   --purple-dk: #5a3fd6;
   --pink: #ff6fae;
@@ -9,345 +44,1339 @@
   --green: #58cc6d;
   --orange: #ffa53d;
   --gold: #ffc93d;
+  --gold-dk: #b8790a;
   --red: #ff5c5c;
-  --shadow: 0 6px 0 rgba(0, 0, 0, 0.18);
-  --radius: 18px;
+
+  /* Command colours come in three ranks: a pale fill, a mid border, and a
+     dark glyph. The dark rank exists so the arrow itself clears the 3:1
+     contrast floor for non-text UI — the mid rank alone does not. */
+  --dir-R-bg: #e7f8ec; --dir-R-mid: #58cc6d; --dir-R-ink: #2f9e4a;
+  --dir-U-bg: #e4f3ff; --dir-U-mid: #4db3ff; --dir-U-ink: #1f86cc;
+  --dir-D-bg: #fff1de; --dir-D-mid: #ffa53d; --dir-D-ink: #c96e0c;
+  --dir-L-bg: #ffe9f2; --dir-L-mid: #ff6fae; --dir-L-ink: #d94a86;
+
+  /* ----- type scale ---------------------------------------------------- */
+  /* ~1.2 ratio, rounded to whole pixels and nudged for optical fit. */
+  --fs-3xs: 11px;
+  --fs-2xs: 12px;
+  --fs-xs:  13px;
+  --fs-sm:  15px;
+  --fs-md:  17px;
+  --fs-lg:  20px;
+  --fs-xl:  24px;
+  --fs-2xl: 30px;
+  --fs-3xl: 38px;
+
+  --lh-flat:  1;
+  --lh-tight: 1.15;
+  --lh-snug:  1.3;
+  --lh-body:  1.45;
+
+  /* ----- 4px spacing grid ---------------------------------------------- */
+  /* --s-0_5 and --s-1_5 are the two sanctioned half-steps. They are for chip
+     interiors (counters, coin pills, loop chips) only — anything that sets
+     the rhythm of the page uses a whole step. */
+  --s-0_5: 2px; --s-1_5: 6px;
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px;
+
+  /* ----- radii --------------------------------------------------------- */
+  --r-xs: 8px; --r-sm: 12px; --r-md: 16px;
+  --r-lg: 20px; --r-xl: 26px; --r-pill: 999px;
+  --radius: var(--r-lg); /* legacy alias */
+
+  /* ----- elevation ----------------------------------------------------- */
+  /* Tinted toward the scene's violet so shadows never read as grey smudge.
+     Each level is a tight contact shadow + a wide ambient one. */
+  --shadow-1: 0 1px 2px rgba(38, 26, 74, 0.10), 0 2px 6px rgba(38, 26, 74, 0.07);
+  --shadow-2: 0 1px 2px rgba(38, 26, 74, 0.10), 0 6px 14px rgba(38, 26, 74, 0.11);
+  --shadow-3: 0 2px 4px rgba(38, 26, 74, 0.10), 0 14px 28px -6px rgba(38, 26, 74, 0.20);
+  --shadow-4: 0 4px 8px rgba(38, 26, 74, 0.12), 0 32px 60px -12px rgba(38, 26, 74, 0.34);
+  /* A 1px lit edge along the top of a light panel; reads as a rounded bevel. */
+  --edge-hi: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --shadow: var(--shadow-2); /* legacy alias */
+
+  /* ----- motion -------------------------------------------------------- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-both: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 110ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --dur-4: 460ms;
+
+  /* ----- misc ---------------------------------------------------------- */
+  --tap: 44px;                       /* minimum touch target */
+  /* Bright toy gradients and white type fight each other: the midpoint of a
+     candy-green ramp sits near 2.3:1. Every ramp below is tuned so its
+     midpoint clears 3:1 against white, and labels are 700 weight at >=20px so
+     they count as large text. Orange cannot get there at all with white type,
+     so it flips to dark ink instead (9.5:1) — which also gives the secondary
+     "Awards" action a look of its own. */
+  --focus: #ffffff;
+  --focus-ring: #3a1f9e;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body { height: 100%; overflow: hidden; }
-body { font-family: var(--font); color: var(--ink); background: #0e0b1e; user-select: none; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: #0e0b1e;
+  user-select: none;
+  font-size: var(--fs-md);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5 { line-height: var(--lh-tight); font-weight: 700; }
 
 #gl { position: fixed; inset: 0; display: block; }
 #app { position: fixed; inset: 0; pointer-events: none; }
-#app > .screen { position: absolute; inset: 0; pointer-events: auto; display: flex; flex-direction: column; }
+#app > .screen {
+  position: absolute; inset: 0; pointer-events: auto;
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  animation: screen-in var(--dur-4) var(--ease-out) both;
+}
 .hidden { display: none !important; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+@keyframes screen-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  to   { opacity: 1; transform: none; }
+}
 
 button { font-family: var(--font); border: none; cursor: pointer; color: inherit; background: none; }
-button:active { transform: translateY(3px); }
-button:focus-visible, [role="button"]:focus-visible, a:focus-visible {
-  outline: 4px solid #fff;
-  outline-offset: 3px;
-  box-shadow: 0 0 0 7px var(--purple-dk), var(--shadow);
-}
 button:disabled { cursor: not-allowed; }
 
+/* Focus, in three layers, because :focus-visible only reached Safari in 15.4
+   and our floor is iPadOS 15.0. An unrecognised pseudo-class invalidates the
+   *entire* selector list it appears in, so anything gated solely on
+   :focus-visible simply does not exist on those iPads — which is how the ring
+   went missing there.
+
+   Layer 1 is therefore plain :focus and uses `outline` only. It is the whole
+   focus story on an old browser, and it deliberately touches no box-shadow:
+   every control here carries its elevation in box-shadow, so overwriting that
+   property on focus would flatten the button the moment it was tapped.
+   Layers 2 and 3 are dropped wholesale by old browsers, which is exactly what
+   we want — they only refine the modern behaviour. */
+button:focus,
+[role="button"]:focus,
+a:focus,
+[tabindex]:focus {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  z-index: 5;
+}
+/* Layer 2: pointer and touch focus wants no ring at all. */
+button:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible) { outline: none; }
+/* Layer 3: keyboard focus gets the two-tone ring — a white core inside a deep
+   violet halo, which reads on white cards, on the purple backdrop and on the
+   sky-blue board alike. */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--focus-ring), var(--shadow-2);
+}
+/* Windows high-contrast mode. Inert on Safari, which is why it refines the
+   base :focus rule rather than being the only place a ring is defined. */
+@media (forced-colors: active) {
+  button:focus,
+  [role="button"]:focus,
+  a:focus,
+  [tabindex]:focus { outline: 3px solid Highlight; }
+}
+
 .skip-link {
-  position: fixed; top: 8px; left: 8px; z-index: 200; transform: translateY(-150%);
-  background: #fff; color: var(--ink); padding: 10px 14px; border-radius: 10px; font-weight: 700;
+  position: fixed; top: var(--s-2); left: var(--s-2); z-index: 200;
+  transform: translateY(-200%);
+  background: var(--paper); color: var(--ink);
+  padding: var(--s-3) var(--s-5); border-radius: var(--r-sm);
+  font-size: var(--fs-sm); font-weight: 600; text-decoration: none;
+  box-shadow: var(--shadow-3);
+  transition: transform var(--dur-2) var(--ease-out);
 }
 .skip-link:focus { transform: translateY(0); }
 
-/* ---------- shared chrome ---------- */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 12px 28px; border-radius: 999px; font-size: 20px; font-weight: 700;
-  color: #fff; background: linear-gradient(#8f73ff, var(--purple-dk));
-  box-shadow: var(--shadow); text-shadow: 0 2px 0 rgba(0,0,0,0.15);
+/* A soft dark wash under text that sits directly on the 3D scene. The scene's
+   colour is not ours to control, so the scrim is what actually guarantees the
+   white type passes AA rather than the backdrop happening to be dark enough.
+   It is scoped to .topbar alone: that is the only header whose title is bare
+   white type. The play screen's header is three opaque white pills, so the
+   same wash there bought nothing and cost a visible horizontal seam across
+   the sky gradient. */
+.topbar, .hud-top { position: relative; isolation: isolate; }
+.topbar::before {
+  content: ''; position: absolute; z-index: -1;
+  inset: -40px -20px auto -20px; height: 190px;
+  background: linear-gradient(180deg, rgba(20, 12, 48, 0.42), rgba(20, 12, 48, 0.16) 46%, rgba(20, 12, 48, 0));
+  pointer-events: none;
 }
-.btn.big { font-size: 28px; padding: 18px 52px; }
-.btn.green { background: linear-gradient(#7bdc8d, #3aa54f); }
-.btn.blue { background: linear-gradient(#6fc6ff, #2b8fd6); }
-.btn.orange { background: linear-gradient(#ffbb64, #e8832a); }
-.btn.red { background: linear-gradient(#ff8080, #d63c3c); }
-.btn.ghost { background: rgba(255,255,255,0.18); backdrop-filter: blur(6px); box-shadow: 0 4px 0 rgba(0,0,0,0.12); }
-.btn:disabled { filter: grayscale(0.8) brightness(0.8); cursor: default; }
+
+/* The card screens float opaque white panels over the live 3D board. Without a
+   backdrop the board shows through every gutter between cards and reads as a
+   rendering fault rather than as depth; with one, the grid sits on a stage. */
+#screen-achievements::before,
+#screen-badges::before,
+#screen-levels::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(22, 13, 52, 0.42), rgba(22, 13, 52, 0.26));
+}
+/* Level select is the one card screen where the board behind is the point —
+   it is the world you are about to play. So the wash there is heavy only
+   under the grid and thins out over the diorama below it. */
+#screen-levels::before {
+  background: linear-gradient(180deg,
+    rgba(22, 13, 52, 0.46) 0%,
+    rgba(22, 13, 52, 0.34) 34%,
+    rgba(22, 13, 52, 0.10) 62%,
+    rgba(22, 13, 52, 0.22) 100%);
+}
+#screen-achievements, #screen-badges, #screen-levels { isolation: isolate; }
+
+/* ---------- buttons ------------------------------------------------------ */
+.btn {
+  --btn-hi: #9078ff; --btn-lo: #5e3fd0; --btn-glow: rgba(90, 63, 214, 0.45); --btn-ink: #fff;
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+  min-height: var(--tap); padding: var(--s-3) var(--s-6);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-lg); font-weight: 700; line-height: var(--lh-flat);
+  color: var(--btn-ink);
+  background: linear-gradient(180deg, var(--btn-hi), var(--btn-lo));
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.16),
+    0 1px 2px rgba(38, 26, 74, 0.20),
+    0 8px 18px -6px var(--btn-glow);
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    filter var(--dur-1) linear;
+  will-change: transform;
+}
+.btn.big {
+  font-size: var(--fs-xl); padding: 16px 40px; min-height: 60px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.17),
+    0 2px 4px rgba(38, 26, 74, 0.20),
+    0 14px 28px -8px var(--btn-glow);
+}
+.btn.green  { --btn-hi: #47c266; --btn-lo: #17803a; --btn-glow: rgba(23, 128, 58, 0.55); }
+.btn.blue   { --btn-hi: #55baf7; --btn-lo: #0b6cae; --btn-glow: rgba(11, 108, 174, 0.55); }
+.btn.red    { --btn-hi: #f76d6d; --btn-lo: #b32424; --btn-glow: rgba(179, 36, 36, 0.50); }
+.btn.orange {
+  --btn-hi: #ffc978; --btn-lo: #f0972a; --btn-glow: rgba(200, 112, 20, 0.50);
+  --btn-ink: #3d2500;
+  text-shadow: none;
+}
+
+/* Ghost is a *neutral* surface, not translucent white with white type — the
+   old version put white text on whatever the board happened to be behind it. */
+.btn.ghost {
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink-2);
+  text-shadow: none;
+  box-shadow:
+    var(--edge-hi),
+    inset 0 0 0 1px var(--hairline),
+    0 1px 2px rgba(38, 26, 74, 0.10),
+    0 4px 10px -4px rgba(38, 26, 74, 0.22);
+}
+
+@media (hover: hover) {
+  .btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+  .btn.big:hover:not(:disabled) { transform: translateY(-2px); }
+  .btn.ghost:hover:not(:disabled) { filter: none; background: #fff; color: var(--ink); }
+}
+.btn:active:not(:disabled) {
+  transform: translateY(2px) scale(0.975);
+  filter: brightness(0.97);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.16),
+    0 1px 2px rgba(38, 26, 74, 0.22);
+  transition-duration: 60ms;
+}
+
+/* Disabled is a flat inert chip. Filtering a saturated gradient toward grey
+   (the old approach) just produced mud.
+
+   No ring. A border is the loudest treatment in the row, and putting it on the
+   one control that cannot be pressed inverted the affordance — disabled Undo
+   was the only pill on the play screen with a visible edge. Absence of
+   elevation *is* the state: a disabled control lies flat on the surface. */
+.btn:disabled {
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(36, 29, 61, 0.38);
+  text-shadow: none;
+  cursor: default;
+  box-shadow: none;
+}
+/* "Already active" is a state, not an unavailable action, so it keeps colour. */
+.btn.state-on:disabled {
+  background: #e6f7ea; color: #1c7a3a;
+  box-shadow: inset 0 0 0 2px rgba(47, 158, 74, 0.35);
+}
+.btn:disabled .ui-icon { opacity: 0.55; }
 
 .icon-btn {
-  width: 52px; height: 52px; border-radius: 16px; font-size: 24px;
-  background: var(--paper); box-shadow: var(--shadow);
+  width: 52px; height: 52px; flex: none;
+  border-radius: var(--r-md); font-size: var(--fs-xl);
+  background: var(--paper); color: var(--ink-2);
+  box-shadow: var(--edge-hi), var(--shadow-2);
   display: inline-flex; align-items: center; justify-content: center;
+  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
+@media (hover: hover) { .icon-btn:hover { transform: translateY(-1px); box-shadow: var(--edge-hi), var(--shadow-3); } }
+.icon-btn:active { transform: translateY(2px) scale(0.94); box-shadow: var(--shadow-1); transition-duration: 60ms; }
 
-.topbar {
-  display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+.topbar { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) var(--s-5) var(--s-3); }
+.topbar > * { position: relative; z-index: 1; }
+.topbar .title {
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--fs-xl); font-weight: 700; color: #fff;
+  letter-spacing: 0.005em;
+  text-shadow: 0 1px 3px rgba(20, 12, 48, 0.5);
 }
-.topbar .title { font-size: 26px; font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.35); }
-.topbar .spacer { flex: 1; }
+.topbar .spacer, .hud-top .spacer { flex: 1; }
 
 .coin-pill {
-  display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
-  background: var(--paper); border-radius: 999px; font-weight: 700; font-size: 18px;
-  box-shadow: var(--shadow);
+  display: inline-flex; align-items: center; gap: var(--s-1_5);
+  min-height: 40px; padding: var(--s-1_5) var(--s-4);
+  background: var(--paper); color: var(--ink);
+  border-radius: var(--r-pill);
+  font-weight: 600; font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--edge-hi), var(--shadow-2);
 }
-/* ---------- custom-art icons (with emoji fallback) ---------- */
+
+/* ---------- custom-art icons (with emoji fallback) ----------------------- */
 .ui-icon {
   display: inline-block; width: 1.15em; height: 1.15em; object-fit: contain;
   vertical-align: -0.2em; pointer-events: none; user-select: none;
 }
 span.ui-icon-fallback { line-height: 1; width: auto; height: auto; }
-.token .ui-icon { width: 70%; height: 70%; vertical-align: middle; }
+.token .ui-icon { width: 66%; height: 66%; vertical-align: middle; }
 .token.loop-block .ui-icon, .palette .token.loop-block .ui-icon { width: 22px; height: 22px; }
-.icon-btn .ui-icon { width: 28px; height: 28px; vertical-align: middle; }
+.icon-btn .ui-icon { width: 26px; height: 26px; vertical-align: middle; }
 .btn .ui-icon { width: 1.1em; height: 1.1em; vertical-align: -0.18em; }
 .btn.big .ui-icon { width: 1em; height: 1em; }
 .coin-pill .ui-icon { width: 20px; height: 20px; vertical-align: -0.28em; }
-.w-emoji .ui-icon { width: 46px; height: 46px; }
-.a-icon .ui-icon, .b-icon .ui-icon { width: 68%; height: 68%; }
+.w-emoji .ui-icon { width: 34px; height: 34px; }
+.a-icon .ui-icon, .b-icon .ui-icon { width: 62%; height: 62%; }
 .l-stars .ui-icon, .w-stats .ui-icon, .stars-row .ui-icon, .cond-slot .ui-icon { width: 1em; height: 1em; vertical-align: -0.15em; }
-.stars-row .ui-icon { width: 46px; height: 46px; vertical-align: middle; }
-.stars-row .ui-icon.dim { opacity: 0.3; filter: grayscale(1); }
+.l-stars .ui-icon { width: 20px; height: 20px; }
+.stars-row .ui-icon { width: 54px; height: 54px; vertical-align: middle; }
 .toast .t-icon .ui-icon { width: 30px; height: 30px; }
 
-/* ---------- menu ---------- */
-#screen-menu { align-items: center; justify-content: center; gap: 18px; }
-.game-logo { text-align: center; margin-bottom: 8px; animation: bob 3s ease-in-out infinite; }
+/* An unearned star is *information*, not decoration: it is how a child counts
+   what is still on the table. Dimming it to 28% put it at 1.4:1 against the
+   card — below the 3:1 floor for meaningful non-text. Full opacity, drained of
+   colour and darkened instead, so it stays plainly countable while never
+   competing with a lit one. */
+.l-stars .ui-icon.dim, .stars-row .ui-icon.dim, .w-stats .ui-icon.dim {
+  opacity: 1;
+  filter: grayscale(1) brightness(0.72) contrast(1.15);
+}
+
+/* Mirrored art. Undo and Reset are one gesture in two directions, so they are
+   the same glyph flipped rather than two unrelated drawings. */
+.ui-icon.flip-x { transform: scaleX(-1); }
+
+/* The four utility controls share one idiom by being drained to ink: the set
+   was previously a hairline text glyph, a thin purple arc, a multi-colour
+   illustrated broom and a flat purple badge, with no common weight or
+   palette. Neutral secondary icons against saturated primary buttons is also
+   the correct hierarchy — colour belongs to Preview and RUN. */
+.utility-controls .ui-icon {
+  filter: grayscale(1) brightness(0.52) contrast(1.15);
+}
+
+/* ---------- menu --------------------------------------------------------- */
+#screen-menu { align-items: center; justify-content: center; gap: var(--s-6); isolation: isolate; }
+/* Guarantees the hero type's contrast whatever the 3D backdrop is doing.
+   White on the bare purple sits at 4.2:1; over this wash it is above 8:1. */
+#screen-menu::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(58% 46% at 50% 44%, rgba(22, 13, 52, 0.44), rgba(22, 13, 52, 0.16) 58%, rgba(22, 13, 52, 0) 78%),
+    linear-gradient(180deg, rgba(22, 13, 52, 0) 78%, rgba(22, 13, 52, 0.32));
+}
+.game-logo { text-align: center; animation: bob 4.5s ease-in-out infinite; }
 .game-logo h1 {
-  font-size: clamp(48px, 9vw, 96px); font-weight: 700; letter-spacing: 2px; color: #fff;
-  text-shadow: 0 5px 0 var(--purple-dk), 0 12px 24px rgba(0,0,0,0.4);
+  font-size: clamp(46px, 8.6vw, 92px);
+  font-weight: 700; letter-spacing: 0.01em; line-height: var(--lh-flat);
+  color: #fff;
+  text-shadow:
+    0 2px 0 var(--purple-dk),
+    0 4px 0 rgba(64, 42, 158, 0.75),
+    0 10px 20px rgba(16, 9, 40, 0.45),
+    0 24px 48px rgba(16, 9, 40, 0.35);
 }
 .game-logo h1 .fz { color: var(--gold); }
-.game-logo .tagline { color: #efe9ff; font-size: 20px; text-shadow: 0 2px 6px rgba(0,0,0,0.4); }
-.menu-buttons { display: flex; flex-direction: column; gap: 14px; align-items: center; }
-.menu-row { display: flex; gap: 12px; }
-.guide-link {
-  color: #efe9ff; font-size: 13px; text-decoration: none; opacity: 0.75;
-  border-bottom: 1px dashed rgba(239,233,255,0.5); padding-bottom: 1px;
+.game-logo .tagline {
+  margin-top: var(--s-3);
+  color: #f2edff; font-size: var(--fs-lg); font-weight: 500;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 3px rgba(16, 9, 40, 0.55);
 }
-.guide-link:hover, .guide-link:focus-visible { opacity: 1; }
+.menu-buttons { display: flex; flex-direction: column; gap: var(--s-4); align-items: center; }
+.menu-row { display: flex; gap: var(--s-3); flex-wrap: wrap; justify-content: center; }
+.menu-row + .menu-row { margin-top: var(--s-1); }
+/* The two grown-up affordances. They share a row and a look because they are
+   the same kind of thing: small, plainly labelled, addressed to an adult, and
+   deliberately not competing with PLAY. */
+.adult-row { display: flex; gap: var(--s-3); flex-wrap: wrap; justify-content: center; margin-top: var(--s-4); }
+.guide-link, .danger-link {
+  display: inline-flex; align-items: center; gap: var(--s-1_5);
+  min-height: var(--tap); padding: var(--s-3) var(--s-5);
+  font-size: var(--fs-sm); font-weight: 500;
+  text-decoration: none; border-radius: var(--r-pill);
+  /* An opaque wash rather than white-at-low-alpha: the old #ece5ff on the bare
+     violet backdrop measured 3.2:1, and this is the one element on the screen
+     written for an adult. On this it clears 8:1. */
+  background: rgba(20, 12, 48, 0.42);
+  color: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.24);
+  transition: background var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+}
+.guide-link:hover { background: rgba(20, 12, 48, 0.62); }
+.guide-link:focus-visible { background: rgba(20, 12, 48, 0.62); }
+/* Wiping every star, badge and purchase is not a sound toggle. It gets a
+   label, a warning colour and its own row — never a bare unlabelled square
+   twelve pixels from the mute button. */
+.danger-link {
+  background: rgba(88, 14, 22, 0.52);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 190, 190, 0.42);
+  font-weight: 600;
+}
+.danger-link:hover { background: rgba(120, 18, 28, 0.72); }
+.danger-link:focus-visible { background: rgba(120, 18, 28, 0.72); }
+.guide-link .ui-icon, .danger-link .ui-icon { width: 17px; height: 17px; }
+.danger-link .ui-icon { filter: grayscale(1) brightness(2.2); }
 .copyright {
-  position: absolute; left: 0; right: 0; bottom: 10px; text-align: center;
-  font-family: var(--font); color: #efe9ff; font-size: 12px; opacity: 0.45; pointer-events: none;
+  position: absolute; left: 0; right: 0; bottom: var(--s-4); text-align: center;
+  font-family: var(--font); color: rgba(255, 255, 255, 0.95);
+  font-size: var(--fs-2xs); font-weight: 500; pointer-events: none;
+  text-shadow: 0 1px 3px rgba(16, 9, 40, 0.75);
 }
-@keyframes bob { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-10px);} }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
 
-/* ---------- panels (worldmap / levels / achievements / badges / chars) ---------- */
-.panel-scroll { flex: 1; overflow-y: auto; padding: 8px 24px 32px; }
+/* ---------- panels (worldmap / levels / achievements / badges / chars) ---- */
+.panel-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: var(--s-2) var(--s-6) var(--s-10);
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
+  overscroll-behavior: contain;
+}
 .panel-scroll::-webkit-scrollbar { width: 10px; }
-.panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); border-radius: 6px; }
+.panel-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.42); border-radius: var(--r-pill); }
+.panel-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.6); }
 
-.world-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; max-width: 1100px; margin: 0 auto; }
+/* A shared card recipe: opaque paper, lit top edge, layered shadow, and a
+   lift-then-press response. */
+.world-card, .level-card, .ach-card, .badge-card, .char-card {
+  background: var(--paper);
+  box-shadow: var(--edge-hi), var(--shadow-3);
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    background var(--dur-2) var(--ease-out);
+}
+@media (hover: hover) {
+  .world-card:not(.locked):hover, .level-card:not(.locked):hover, .char-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--edge-hi), var(--shadow-4);
+  }
+}
+.world-card:not(.locked):active, .level-card:not(.locked):active, .char-card:active {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: var(--edge-hi), var(--shadow-1);
+  transition-duration: 70ms;
+}
+
+.world-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+  gap: var(--s-5); max-width: 1160px; margin: 0 auto;
+}
 .world-card {
-  position: relative; border-radius: var(--radius); padding: 20px; text-align: left;
-  background: var(--paper); box-shadow: var(--shadow); overflow: hidden;
-  border-top: 10px solid var(--wc, var(--purple));
+  position: relative; display: flex; flex-direction: column; gap: var(--s-2);
+  border-radius: var(--r-xl); padding: var(--s-5) var(--s-5) var(--s-4);
+  text-align: left; overflow: hidden; isolation: isolate;
+  /* Accent lives in the box-shadow, so the rounded corner clips it cleanly
+     and the bar costs no layout. */
+  box-shadow: inset 0 5px 0 var(--wc, var(--purple)), var(--edge-hi), var(--shadow-3);
 }
-.world-card .w-emoji { font-size: 44px; }
-.world-card h3 { font-size: 22px; margin: 6px 0 2px; }
-.world-card .w-sub { font-size: 14px; opacity: 0.75; min-height: 34px; }
-.world-card .w-progress { margin-top: 10px; height: 12px; border-radius: 6px; background: rgba(0,0,0,0.1); overflow: hidden; }
-.world-card .w-progress > div { height: 100%; background: var(--wc, var(--purple)); border-radius: 6px; transition: width 0.4s; }
-.world-card .w-stats { display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; margin-top: 6px; }
-.world-card.locked { filter: grayscale(0.9); }
+/* A whisper of the world's colour washing down from the top-right corner. */
+.world-card::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 90% at 100% 0%, var(--wc, var(--purple)), transparent 62%);
+  opacity: 0.10;
+}
+.world-card .w-emoji {
+  width: 52px; height: 52px; margin-top: var(--s-1);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-md); font-size: 30px; line-height: 1;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.84)),
+    var(--wc, var(--purple));
+  box-shadow: inset 0 0 0 1.5px rgba(36, 29, 61, 0.07);
+}
+.world-card h3 {
+  font-size: var(--fs-lg); font-weight: 700; line-height: var(--lh-tight);
+  margin-top: var(--s-1); text-wrap: balance;
+}
+.world-card .w-sub {
+  font-size: var(--fs-xs); font-weight: 500; line-height: var(--lh-body);
+  color: var(--ink-3); min-height: 38px;
+}
+.world-card .w-progress {
+  margin-top: var(--s-2); height: 10px; border-radius: var(--r-pill);
+  background: rgba(36, 29, 61, 0.09); overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(36, 29, 61, 0.10);
+}
+.world-card .w-progress > div {
+  height: 100%; border-radius: var(--r-pill);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0)),
+    var(--wc, var(--purple));
+  transition: width var(--dur-4) var(--ease-out);
+}
+.world-card .w-stats {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.world-card .w-stats span:last-child { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--gold-dk); }
+
+/* Locked cards should look *deliberately* dormant — resting flat on the
+   surface, cool-toned, still fully legible — not like a broken render. */
+.world-card.locked {
+  background: #edebf6;
+  color: var(--ink-2);
+  box-shadow: inset 0 5px 0 rgba(140, 128, 178, 0.4), var(--shadow-1);
+}
+.world-card.locked .w-sub, .world-card.locked .w-locked-note { color: var(--ink-2); }
+.world-card.locked::after { opacity: 0.04; }
+.world-card.locked h3 { color: var(--ink-2); }
+.world-card.locked .w-emoji { filter: grayscale(1); opacity: 0.6; background: rgba(36, 29, 61, 0.07); box-shadow: none; }
+.world-card.locked .w-progress { background: rgba(36, 29, 61, 0.07); box-shadow: none; }
+.world-card.locked .w-stats, .world-card.locked .w-stats span:last-child { color: var(--ink-2); }
 .world-card.locked, .level-card.locked { cursor: not-allowed; }
+
+.w-locked-note {
+  display: flex; align-items: center; gap: var(--s-1_5);
+  margin-top: var(--s-1); font-size: var(--fs-2xs); font-weight: 600;
+  color: var(--ink-3); line-height: var(--lh-snug);
+}
+
+/* The lock is a corner chip, not a translucent veil over the whole card. */
 .lock-badge {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-size: 52px; background: rgba(255,255,255,0.55); border-radius: var(--radius);
+  position: absolute; top: var(--s-4); right: var(--s-4);
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(36, 29, 61, 0.10); color: var(--ink-3); font-size: var(--fs-md);
 }
-.lock-badge .ui-icon { width: 52px; height: 52px; }
+.lock-badge .ui-icon { width: 18px; height: 18px; opacity: 0.65; }
 
-.level-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; max-width: 900px; margin: 0 auto; }
+/* Twelve cards, sized so a world reads as two full rows of six rather than a
+   thin ribbon stranded at the top of the frame. */
+.level-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--s-4); max-width: 1100px; margin: 0 auto;
+}
 .level-card {
-  border-radius: var(--radius); padding: 14px 10px; background: var(--paper);
-  box-shadow: var(--shadow); text-align: center; position: relative;
+  position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start; gap: var(--s-1_5);
+  border-radius: var(--r-lg); padding: var(--s-5) var(--s-3) var(--s-4);
+  text-align: center; min-height: 154px;
 }
-.level-card .l-num { font-size: 30px; font-weight: 700; }
-.level-card .l-name { font-size: 12px; opacity: 0.7; height: 28px; overflow: hidden; }
-.level-card .l-stars { font-size: 16px; letter-spacing: 2px; }
-.level-card.locked { filter: grayscale(1) opacity(0.6); }
-.level-card.perfect { outline: 3px solid var(--gold); }
+.level-card .l-num {
+  font-size: var(--fs-3xl); font-weight: 700; line-height: var(--lh-flat);
+  font-variant-numeric: tabular-nums;
+}
+.level-card .l-name {
+  font-size: var(--fs-xs); font-weight: 500; line-height: var(--lh-snug);
+  color: var(--ink-3); min-height: 34px; overflow: hidden;
+}
+.level-card .l-stars { display: flex; gap: var(--s-1); justify-content: center; margin-top: auto; }
+/* A locked card keeps its number. Hiding eleven of twelve numerals behind
+   identical padlocks made the one thing World 1 is teaching — that levels run
+   in order — unreadable; the padlock moves to a corner chip instead. */
+.level-card.locked {
+  background: #edebf6;
+  color: var(--ink-2);
+  box-shadow: var(--shadow-1);
+}
+.level-card.locked .l-num { color: var(--ink-3); }
+.level-card.locked .l-name { color: var(--ink-2); }
+.level-card .lock-badge { top: var(--s-2); right: var(--s-2); width: 26px; height: 26px; }
+.level-card .lock-badge .ui-icon { width: 14px; height: 14px; }
+/* Gold ring via inset shadow, so it never competes with the focus outline. */
+.level-card.perfect { box-shadow: inset 0 0 0 3px var(--gold), var(--edge-hi), var(--shadow-3); }
+.level-card .l-perfect {
+  position: absolute; top: -8px; right: -6px;
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, #ffe08a, var(--gold));
+  box-shadow: 0 2px 6px rgba(184, 121, 10, 0.45);
+  font-size: var(--fs-2xs);
+}
+.level-card .l-perfect .ui-icon { width: 17px; height: 17px; }
 
-/* ---------- achievements & badges ---------- */
-.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; max-width: 1100px; margin: 0 auto; }
+/* ---------- achievements & badges ---------------------------------------- */
+.ach-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
+  gap: var(--s-3); max-width: 1160px; margin: 0 auto;
+}
+/* Top-aligned, with the description reserving two lines. Centring the text
+   block meant that a description which wrapped re-centred its title, so
+   neighbouring titles in the same row sat on three different baselines. */
 .ach-card {
-  display: flex; gap: 12px; align-items: center; background: var(--paper);
-  border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow);
+  display: flex; gap: var(--s-3); align-items: flex-start;
+  border-radius: var(--r-lg); padding: var(--s-3) var(--s-4);
 }
 .ach-card .a-icon {
-  width: 54px; height: 54px; flex: none; border-radius: 14px; font-size: 28px;
-  display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.06);
+  position: relative;
+  width: 54px; height: 54px; flex: none; border-radius: var(--r-md);
+  font-size: var(--fs-xl);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--paper-2);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
-.ach-card.t-bronze .a-icon { background: linear-gradient(#e8b27d, #a9713f); }
-.ach-card.t-silver .a-icon { background: linear-gradient(#e8ecf2, #9fb0c4); }
-.ach-card.t-gold .a-icon { background: linear-gradient(#ffe08a, #e8a820); }
-.ach-card h4 { font-size: 16px; }
-.ach-card p { font-size: 13px; opacity: 0.75; }
-.ach-card .a-coins { margin-left: auto; font-weight: 700; font-size: 14px; white-space: nowrap; }
-.ach-card.locked { opacity: 0.55; filter: grayscale(0.85); }
+.ach-card.t-bronze .a-icon { background: linear-gradient(180deg, #eec091, #b17640); }
+.ach-card.t-silver .a-icon { background: linear-gradient(180deg, #eef2f7, #a8b8ca); }
+.ach-card.t-gold   .a-icon { background: linear-gradient(180deg, #ffe49a, #eaa91c); }
+.ach-card h4 { font-size: var(--fs-md); font-weight: 700; line-height: var(--lh-tight); }
+/* Two lines reserved, so a one-line and a two-line card are the same height
+   and every title in a row shares one baseline. */
+.ach-card p {
+  font-size: var(--fs-xs); font-weight: 500; line-height: var(--lh-snug);
+  color: var(--ink-3); margin-top: var(--s-0_5); min-height: 34px;
+}
+.ach-card .a-coins {
+  margin-left: auto; flex: none; align-self: center;
+  display: inline-flex; align-items: center; gap: var(--s-1);
+  padding: var(--s-1) var(--s-3); border-radius: var(--r-pill);
+  background: #fff5da; color: var(--gold-dk);
+  font-weight: 700; font-size: var(--fs-xs); white-space: nowrap;
+}
+.ach-card.locked { background: #edebf6; box-shadow: var(--shadow-1); }
+.ach-card.locked h4, .ach-card.locked p { color: var(--ink-2); }
+/* A locked achievement keeps its tier. Flattening every plate to the same grey
+   hid the entire bronze/silver/gold ladder until it was earned — which is
+   precisely when a child no longer needs to be told it exists. The tints below
+   are the earned ramps drained of chroma: same hue family, no shine. */
+.ach-card.locked .a-icon { box-shadow: inset 0 0 0 1.5px rgba(36, 29, 61, 0.08); }
+.ach-card.locked.t-bronze .a-icon { background: linear-gradient(180deg, #ded0c1, #b6a190); }
+.ach-card.locked.t-silver .a-icon { background: linear-gradient(180deg, #e6eaef, #b3bcc7); }
+.ach-card.locked.t-gold   .a-icon { background: linear-gradient(180deg, #eee0bb, #c9b585); }
+.ach-card.locked .a-icon .ui-icon { filter: grayscale(1) brightness(1.06); opacity: 0.72; }
+/* A pip on the medal, not a substitute for it. */
+.a-lock {
+  position: absolute; right: -5px; bottom: -5px;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; box-shadow: 0 1px 3px rgba(38, 26, 74, 0.32);
+}
+.a-lock .ui-icon { width: 12px; height: 12px; filter: grayscale(1) brightness(0.55); opacity: 1; }
+.ach-card.locked .a-coins { background: rgba(36, 29, 61, 0.06); color: var(--ink-2); }
 
-.badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; max-width: 1000px; margin: 0 auto; }
+.badge-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: var(--s-4); max-width: 1020px; margin: 0 auto;
+}
 .badge-card {
-  background: var(--paper); border-radius: 50% 50% var(--radius) var(--radius);
-  padding: 20px 10px 14px; text-align: center; box-shadow: var(--shadow);
+  position: relative;
+  border-radius: var(--r-xl); padding: var(--s-5) var(--s-3) var(--s-4);
+  text-align: center;
 }
 .badge-card .b-icon {
-  width: 72px; height: 72px; margin: 0 auto 8px; border-radius: 50%; font-size: 36px;
+  width: 74px; height: 74px; margin: 0 auto var(--s-3); border-radius: 50%;
+  font-size: var(--fs-2xl);
   display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 30% 25%, #ffe9a8, var(--gold));
-  box-shadow: inset 0 -4px 0 rgba(0,0,0,0.15), 0 4px 8px rgba(0,0,0,0.2);
+  background: radial-gradient(circle at 32% 26%, #fff0bd, var(--gold) 72%, #e2a416);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.14), inset 0 2px 0 rgba(255, 255, 255, 0.55),
+              0 4px 12px -2px rgba(184, 121, 10, 0.5);
 }
-.badge-card h4 { font-size: 15px; }
-.badge-card p { font-size: 12px; opacity: 0.7; }
-.badge-card.locked { opacity: 0.5; filter: grayscale(1); }
+.badge-card h4 { font-size: var(--fs-sm); font-weight: 700; line-height: var(--lh-tight); }
+.badge-card p { font-size: var(--fs-2xs); font-weight: 500; line-height: var(--lh-snug); color: var(--ink-3); margin-top: var(--s-1); }
+.badge-card.locked { background: #edebf6; box-shadow: var(--shadow-1); }
+/* An unearned badge keeps its own art, drained rather than replaced. Swapping
+   twenty-two different badges for twenty-two identical padlocks turned the
+   whole wall into one repeated shape; the padlock is a corner chip now, and
+   the medal itself carries the dormant read. */
+.badge-card.locked .b-icon {
+  filter: grayscale(1) brightness(1.12);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.10), inset 0 2px 0 rgba(255, 255, 255, 0.45);
+}
+.badge-card.locked h4, .badge-card.locked p { color: var(--ink-2); }
+.badge-card .lock-badge { top: var(--s-3); right: var(--s-3); width: 28px; height: 28px; }
+.badge-card .lock-badge .ui-icon { width: 15px; height: 15px; }
 
-.progress-line { text-align: center; color: #fff; font-weight: 600; margin: 4px 0 14px; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+/* A counted progress line reads as a status chip, not a floating caption. */
+.progress-line { text-align: center; margin: 0 0 var(--s-4); }
+.progress-line > span {
+  display: inline-flex; align-items: center; gap: var(--s-1_5);
+  padding: var(--s-2) var(--s-5); border-radius: var(--r-pill);
+  background: rgba(20, 12, 48, 0.42);
+  color: #fff; font-size: var(--fs-sm); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
 
-/* ---------- characters ---------- */
+/* ---------- characters --------------------------------------------------- */
 .char-layout { flex: 1; display: flex; min-height: 0; }
-.char-list { width: min(46%, 520px); overflow-y: auto; padding: 8px 18px 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; align-content: start; }
+.char-list {
+  width: min(46%, 540px); overflow-y: auto;
+  padding: var(--s-2) var(--s-5) var(--s-10);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  gap: var(--s-3); align-content: start;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
+  overscroll-behavior: contain;
+}
+.char-list::-webkit-scrollbar { width: 10px; }
+.char-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.42); border-radius: var(--r-pill); }
 .char-card {
-  background: var(--paper); border-radius: var(--radius); padding: 12px 8px; text-align: center;
-  box-shadow: var(--shadow); border: 3px solid transparent;
+  border-radius: var(--r-lg); padding: var(--s-3) var(--s-2) var(--s-3);
+  text-align: center; min-height: 128px;
+  display: flex; flex-direction: column; align-items: center; gap: var(--s-1_5);
 }
-.char-card.selected { border-color: var(--purple); }
-.char-card .c-ball { width: 56px; height: 56px; margin: 0 auto 6px; border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, #fff8, transparent 40%), var(--cb, #7ec8ff);
-  box-shadow: inset 0 -6px 0 rgba(0,0,0,0.15); }
-.char-card h4 { font-size: 15px; }
-.char-card .c-cost { font-size: 13px; font-weight: 700; }
-.char-card.owned .c-cost { color: var(--green); }
-.char-card.locked { filter: saturate(0.4); }
-.char-detail { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 24px; gap: 10px; }
-.char-detail .cd-panel { background: var(--paper); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 26px; text-align: center; max-width: 420px; }
-.char-detail h3 { font-size: 26px; }
-.char-detail p { font-size: 15px; opacity: 0.8; margin: 4px 0 10px; }
+/* Ring + a modest lift. A full shadow-4 here spilled visibly onto the
+   neighbouring cards in a tight grid. */
+.char-card.selected {
+  box-shadow: inset 0 0 0 3px var(--purple), var(--edge-hi), var(--shadow-3);
+  transform: translateY(-2px);
+}
+/* A shop thumbnail has to be the *character*, not a colour swatch. On hue
+   alone Mossy, Minty and Zapp were three greens and Rosie, Coral and Bubbles
+   three pinks — indistinguishable to a colour-blind child, and none of them
+   looked like the bloop on the board. So the chip carries the accent as a
+   shaded lower half and the eyes as two pseudo-element dots, which is what a
+   child actually recognises a bloop by. */
+.char-card .c-ball {
+  position: relative;
+  width: 58px; height: 58px; border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0) 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 52%, var(--cb2, rgba(0, 0, 0, 0.28))),
+    var(--cb, #5db4ff);
+  box-shadow: inset 0 -6px 10px -4px rgba(0, 0, 0, 0.28), 0 3px 8px -2px rgba(38, 26, 74, 0.35);
+}
+.char-card .c-ball::before, .char-card .c-ball::after {
+  content: ''; position: absolute; top: 40%;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 54%, var(--ink) 0 2.5px, #fff 2.6px);
+  box-shadow: 0 1px 2px rgba(38, 26, 74, 0.25);
+}
+.char-card .c-ball::before { left: 34%; margin-left: -5.5px; }
+.char-card .c-ball::after  { left: 62%; margin-left: -5.5px; }
+.char-card h4 { font-size: var(--fs-sm); font-weight: 700; line-height: var(--lh-tight); }
+.char-card .c-cost {
+  display: inline-flex; align-items: center; gap: var(--s-1); margin-top: auto;
+  padding: var(--s-1) var(--s-3); border-radius: var(--r-pill);
+  background: var(--paper-2); color: var(--ink-2);
+  font-size: var(--fs-2xs); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.char-card .c-cost .ui-icon { width: 15px; height: 15px; }
+.char-card.owned .c-cost { background: #e6f7ea; color: #1c7a3a; }
+.char-card .c-cost.afford { background: #fff3d6; color: var(--gold-dk); }
+.char-card.locked .c-ball { filter: saturate(0.55); opacity: 0.9; }
 
-/* ---------- play HUD ---------- */
+.char-detail {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end;
+  padding: var(--s-6) var(--s-6) var(--s-8);
+  min-width: 0;
+}
+.char-detail .cd-panel {
+  background: var(--paper); border-radius: var(--r-xl);
+  box-shadow: var(--edge-hi), var(--shadow-4);
+  padding: var(--s-5) var(--s-8) var(--s-5);
+  text-align: center; max-width: 440px; width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: var(--s-2);
+  animation: rise-in var(--dur-3) var(--ease-out) both;
+}
+.char-detail h3 { font-size: var(--fs-xl); font-weight: 700; }
+.char-detail p {
+  font-size: var(--fs-sm); font-weight: 500; line-height: var(--lh-body);
+  color: var(--ink-3); text-wrap: balance;
+}
+.char-detail .btn { margin-top: var(--s-2); }
+@keyframes rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ---------- play HUD ----------------------------------------------------- */
 #screen-play { justify-content: space-between; }
-.hud-top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+.hud-top { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); }
+.hud-top > * { position: relative; z-index: 1; }
 .hud-top .lv-name {
-  background: var(--paper); padding: 10px 20px; border-radius: 999px; font-weight: 700;
-  font-size: 18px; box-shadow: var(--shadow);
+  background: var(--paper); padding: var(--s-2) var(--s-5); border-radius: var(--r-pill);
+  font-weight: 600; font-size: var(--fs-md); line-height: var(--lh-tight);
+  box-shadow: var(--edge-hi), var(--shadow-2);
 }
+
+/* The coach line and the goal chips share one centred column. They used to be
+   two separately positioned overlays, which collided as soon as the message
+   wrapped to a second line on a narrow screen. */
+.hud-coach {
+  position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: var(--s-2);
+  width: max-content; max-width: min(88%, 700px); pointer-events: none;
+}
+/* Tone classes (not inline styles) own the colour so every state is
+   guaranteed to keep white text above 4.5:1.
+
+   This is the sentence that tells a child what to do, so it is sized like one:
+   it was the *smallest* type on the play screen, under a 17px level ID and a
+   24px RUN. The opaque background also made the backdrop-filter behind it pure
+   cost — 12% show-through is not an effect, it is a GPU bill. */
 .hud-msg {
-  position: absolute; top: 76px; left: 50%; transform: translateX(-50%);
-  background: rgba(42,36,64,0.85); color: #fff; padding: 10px 22px; border-radius: 999px;
-  font-size: 16px; max-width: 80%; text-align: center; backdrop-filter: blur(4px);
+  background: rgba(30, 21, 62, 0.9);
+  color: #fff; padding: var(--s-3) var(--s-6); border-radius: var(--r-pill);
+  font-size: var(--fs-md); font-weight: 500; line-height: var(--lh-snug);
+  max-width: 100%; text-align: center;
+  box-shadow: 0 6px 20px -6px rgba(16, 9, 40, 0.55);
+  transition: background var(--dur-2) var(--ease-out);
 }
-.level-goals {
-  position: absolute; top: 128px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 8px; max-width: 92%; white-space: nowrap;
-}
+.hud-msg.tone-bad  { background: rgba(163, 40, 33, 0.96); }
+.hud-msg.tone-good { background: rgba(23, 116, 60, 0.96); }
+.hud-msg.tone-warn { background: rgba(150, 84, 12, 0.96); }
+
+/* One chip, and only the fact that actually changes from level to level. The
+   other two ("Reach the exit", "Collect 3 stars") were true of all sixty
+   levels and were paying for themselves in vertical space every single time. */
+.level-goals { display: flex; gap: var(--s-1_5); flex-wrap: wrap; justify-content: center; }
 .level-goals span {
-  background: rgba(255,255,255,0.9); border-radius: 999px; padding: 6px 12px;
-  font-size: 12px; font-weight: 700; box-shadow: 0 3px 0 rgba(0,0,0,0.12);
+  background: rgba(255, 255, 255, 0.93); color: var(--ink-2);
+  border-radius: var(--r-pill); padding: var(--s-1_5) var(--s-3);
+  font-size: var(--fs-2xs); font-weight: 600; line-height: var(--lh-tight);
+  box-shadow: var(--shadow-1);
 }
 
-.hud-bottom { padding: 10px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+/* No scrim. Everything in this dock is an opaque panel, so the wash darkened
+   nothing but the sky it was drawn over — and it left a hard horizontal seam
+   across the gradient where it ended. */
+.hud-bottom {
+  position: relative; isolation: isolate;
+  padding: var(--s-2) var(--s-4) var(--s-4);
+  display: flex; flex-direction: column; gap: var(--s-3);
+}
+
+/* ---------- the console: one card, one row per program surface ----------- */
+/* Grouping the condition binder, F1, the program, the palette *and* the run
+   controls into a single card is what stops the HUD reading as a stack of
+   empty white bars.
+
+   Two things about the sizing are deliberate. First, the card is fit-content:
+   at a fixed 1280px the trays ran out of chips around the 600px mark and the
+   remaining half of the largest object on screen was blank paper. Second, the
+   run controls are a *column* on the right rather than a row underneath, so
+   the emptiest part of the card is filled by the thing that used to sit below
+   it — which also gives the 3D board back a whole row of height.
+   No backdrop-filter: at 96% opacity there was nothing to see through, and it
+   was a full-screen-width blur running every frame on an A10 iPad. */
+.console {
+  display: flex; align-items: stretch;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: var(--r-xl);
+  box-shadow: var(--edge-hi), var(--shadow-3);
+  overflow: hidden;
+  width: fit-content; min-width: min(880px, 100%); max-width: 1280px;
+  margin: 0 auto;
+}
+.console-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.console-rows > .tray + .tray { border-top: 1px solid var(--hairline); }
+
 .tray {
-  background: var(--paper); border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  border: 3px solid transparent;
+  position: relative;
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  min-height: 68px;
+  transition: background var(--dur-2) var(--ease-out);
 }
-.tray .tray-label { font-weight: 700; font-size: 14px; opacity: 0.7; width: 68px; flex: none; }
-.tray.active { border-color: var(--purple); }
 .tray.clickable { cursor: pointer; }
+/* Active surface: a colour wash plus a left rail. Far calmer than a full
+   ring, and it survives being one row of a shared card. */
+.tray.active {
+  background: rgba(124, 92, 255, 0.075);
+  box-shadow: inset 3px 0 0 var(--purple);
+}
+.tray-head {
+  flex: none; width: 78px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1);
+}
+.tray .tray-label {
+  display: flex; align-items: center; gap: var(--s-1);
+  font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2);
+  line-height: var(--lh-tight); letter-spacing: 0.01em;
+}
+.tray .tray-label .ui-icon { width: 15px; height: 15px; }
+.tray-count {
+  display: inline-flex; align-items: baseline; gap: 1px;
+  padding: var(--s-0_5) var(--s-2); border-radius: var(--r-pill);
+  background: var(--paper-2); color: var(--ink-2);
+  font-variant-numeric: tabular-nums; line-height: 1.25;
+  transition: background var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out);
+}
+.tray-count .tc-now { font-size: var(--fs-sm); font-weight: 700; }
+.tray-count .tc-max { font-size: var(--fs-2xs); font-weight: 600; color: var(--ink-3); }
+.tray-count.full { background: #fff0d6; color: var(--gold-dk); }
+.tray-count.full .tc-max { color: var(--gold-dk); }
 
-.slot-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 48px; flex: 1; }
+/* Slots are numbered by a CSS counter, so the step order is always correct
+   without the renderer having to track indices. */
+.slot-row {
+  display: flex; gap: var(--s-2); flex-wrap: wrap; align-items: center;
+  min-height: 52px; flex: 1; counter-reset: step;
+  padding: var(--s-1) 0;
+}
+.slot-hint {
+  font-size: var(--fs-xs); font-weight: 500; color: var(--ink-3);
+  align-self: center; padding-left: var(--s-1);
+}
 
+/* ---------- command chips ------------------------------------------------ */
 .token {
-  width: 46px; height: 46px; border-radius: 12px; font-size: 22px; font-weight: 700;
-  display: inline-flex; align-items: center; justify-content: center; color: var(--ink);
-  background: #fff; border: 3px solid transparent;
-  box-shadow: 0 4px 0 rgba(0,0,0,0.2); position: relative; flex: none; cursor: pointer;
+  --tk-bg: #fff; --tk-mid: #cec8e6; --tk-ink: var(--ink); --tk-lip: rgba(36, 29, 61, 0.10);
+  position: relative; flex: none;
+  width: 52px; height: 52px; min-width: 52px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-lg); font-weight: 700; line-height: var(--lh-flat);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--tk-ink);
+  background: var(--tk-bg);
+  box-shadow:
+    inset 0 0 0 2.5px var(--tk-mid),
+    inset 0 -3px 0 var(--tk-lip),
+    0 1px 2px rgba(38, 26, 74, 0.14),
+    0 4px 10px -3px rgba(38, 26, 74, 0.24);
+  cursor: pointer;
+  transition:
+    transform var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
 }
-/* Card stays white/neutral; the direction's color drives the border, shadow,
-   and (via currentColor) the vector arrow glyph itself. */
-.token.d-U { border-color: var(--blue); box-shadow: 0 4px 0 #2f8fce; color: var(--blue); }
-.token.d-D { border-color: var(--orange); box-shadow: 0 4px 0 #e8832a; color: var(--orange); }
-.token.d-L { border-color: var(--pink); box-shadow: 0 4px 0 #e0508e; color: var(--pink); }
-.token.d-R { border-color: var(--green); box-shadow: 0 4px 0 #3aa54f; color: var(--green); }
+.slot-row > .token::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute; top: -7px; left: -7px;
+  min-width: 20px; height: 20px; padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: #fff; color: var(--ink-3);
+  font-size: var(--fs-3xs); font-weight: 700; line-height: 20px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(38, 26, 74, 0.28);
+}
+.token.d-U { --tk-bg: var(--dir-U-bg); --tk-mid: var(--dir-U-mid); --tk-ink: var(--dir-U-ink); --tk-lip: rgba(31, 134, 204, 0.45); }
+.token.d-D { --tk-bg: var(--dir-D-bg); --tk-mid: var(--dir-D-mid); --tk-ink: var(--dir-D-ink); --tk-lip: rgba(201, 110, 12, 0.45); }
+.token.d-L { --tk-bg: var(--dir-L-bg); --tk-mid: var(--dir-L-mid); --tk-ink: var(--dir-L-ink); --tk-lip: rgba(217, 74, 134, 0.42); }
+.token.d-R { --tk-bg: var(--dir-R-bg); --tk-mid: var(--dir-R-mid); --tk-ink: var(--dir-R-ink); --tk-lip: rgba(47, 158, 74, 0.45); }
 .dir-arrow { display: inline-block; }
-.token.executing { outline: 4px solid var(--gold); transform: scale(1.1); }
-.token.loop-block {
-  width: auto; padding: 4px 8px; background: #fff; border: 3px solid #6a4fd8; gap: 4px; height: auto; min-height: 46px;
-  display: inline-flex; flex-wrap: wrap; align-items: center;
-  box-shadow: 0 4px 0 #4c37a3;
-}
-.token.loop-block .loop-count { font-size: 16px; background: rgba(122,92,255,0.15); color: var(--purple-dk); border-radius: 8px; padding: 2px 8px; }
-.token.loop-block .loop-body { display: flex; gap: 4px; flex-wrap: wrap; }
-.token.loop-block .token { width: 36px; height: 36px; font-size: 17px; }
-.token.call-token { background: var(--gold); color: var(--ink); border-color: var(--gold); box-shadow: 0 4px 0 #cf9b1d; }
-.token.ghost-slot { background: rgba(0,0,0,0.08); border-color: transparent; box-shadow: none; color: rgba(0,0,0,0.3); font-size: 15px; cursor: default; }
 
-.palette { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.palette .token { transition: transform 0.1s; }
-.palette .token:hover { transform: scale(1.08); }
+@media (hover: hover) {
+  .token:not(.ghost-slot):hover {
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 0 0 2.5px var(--tk-mid),
+      inset 0 -3px 0 var(--tk-lip),
+      0 2px 4px rgba(38, 26, 74, 0.16),
+      0 10px 18px -4px rgba(38, 26, 74, 0.30);
+  }
+}
+.token:not(.ghost-slot):active {
+  transform: translateY(2px) scale(0.94);
+  box-shadow: inset 0 0 0 2.5px var(--tk-mid), 0 1px 2px rgba(38, 26, 74, 0.2);
+  transition-duration: 60ms;
+}
+
+/* The chip currently executing. A ring plus a soft glow beats a bare outline
+   and stays visible against every board colour. The pulse is capped at six
+   half-cycles: after a failed run the last-executed chip keeps this class so a
+   child can see where the program stopped, and an infinite animation left that
+   marker throbbing for as long as the level stayed open. An even count lands
+   back on the base ring, which is the marker. */
+.token.executing {
+  box-shadow:
+    inset 0 0 0 2.5px var(--tk-mid),
+    0 0 0 4px var(--gold),
+    0 0 22px 2px rgba(255, 201, 61, 0.65);
+  transform: scale(1.1);
+  animation: chip-pulse 0.75s var(--ease-both) 6 alternate;
+  z-index: 2;
+}
+@keyframes chip-pulse { to { box-shadow: inset 0 0 0 2.5px var(--tk-mid), 0 0 0 6px var(--gold), 0 0 30px 4px rgba(255, 201, 61, 0.8); } }
+
+.token.loop-block {
+  --tk-bg: #f0ecff; --tk-mid: #8f73ff; --tk-ink: #4a2fb8; --tk-lip: rgba(74, 47, 184, 0.35);
+  width: auto; min-width: 0; height: auto; min-height: 52px;
+  padding: var(--s-1_5) var(--s-3); gap: var(--s-1_5);
+  display: inline-flex; flex-wrap: wrap; align-items: center;
+}
+.token.loop-block .loop-count {
+  font-size: var(--fs-sm); font-weight: 700;
+  background: rgba(122, 92, 255, 0.18); color: #4a2fb8;
+  border-radius: var(--r-xs); padding: var(--s-1) var(--s-2); min-height: 26px;
+  font-variant-numeric: tabular-nums;
+}
+.token.loop-block .loop-body { display: flex; gap: var(--s-1_5); flex-wrap: wrap; align-items: center; }
+.token.loop-block .token { width: 40px; height: 40px; min-width: 40px; font-size: var(--fs-md); border-radius: var(--r-sm); }
+.token.loop-block .loop-del {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(36, 29, 61, 0.08); color: var(--ink-3);
+  font-size: var(--fs-2xs); line-height: 1;
+}
+.token.loop-block.editing { box-shadow: inset 0 0 0 2.5px var(--tk-mid), 0 0 0 3px var(--gold), 0 4px 12px -3px rgba(38, 26, 74, 0.3); }
+
+.token.call-token {
+  --tk-bg: #fff2cc; --tk-mid: #efb016; --tk-ink: #7a4f00; --tk-lip: rgba(122, 79, 0, 0.32);
+  width: auto; min-width: 52px; padding: 0 var(--s-4);
+  font-size: var(--fs-lg);
+}
+
+/* An empty slot: a dashed well that visibly wants a chip dropped in it. The
+   outline was at 1.75:1 and its step number at 2.12:1 against the tray — both
+   under the 3:1 floor, on the two marks that carry the whole lesson (this is
+   step three, and there are five steps). Both are now well clear of it. */
+.token.ghost-slot {
+  background: rgba(36, 29, 61, 0.03);
+  box-shadow: none;
+  outline: 2px dashed rgba(36, 29, 61, 0.55);
+  outline-offset: -2px;
+  color: rgba(36, 29, 61, 0.42);
+  font-size: var(--fs-lg); font-weight: 700; cursor: default;
+}
+.slot-row > .token.ghost-slot::before { background: var(--paper-2); color: var(--ink-3); box-shadow: none; }
+/* The next chip lands here. Three beckons, then it rests: a mark that pulses
+   forever stops being a signal and starts being wallpaper, and on a level with
+   several empty surfaces it is also three compositing layers animating on an
+   iPad that has a 3D scene to draw. The static state is already distinct. */
+.token.ghost-slot.next {
+  outline-color: rgba(124, 92, 255, 0.75);
+  color: var(--purple-dk);
+  background-color: rgba(124, 92, 255, 0.09);
+  font-size: var(--fs-xl);
+  animation: slot-beckon 1.9s var(--ease-both) 3;
+}
+@keyframes slot-beckon {
+  0%, 100% { outline-color: rgba(124, 92, 255, 0.75); box-shadow: none; }
+  50%      { outline-color: rgba(124, 92, 255, 1); box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.16); }
+}
+
+/* A chip that has just been placed. */
+@keyframes chip-in {
+  0%   { transform: scale(0.5) translateY(-6px); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+.token.just-added { animation: chip-in var(--dur-3) var(--ease-spring) both; }
+
+.palette { display: flex; gap: var(--s-2); flex-wrap: wrap; align-items: center; flex: 1; }
+.tray.row-palette { background: rgba(36, 29, 61, 0.035); }
 
 .cond-slot {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 12px;
-  background: rgba(0,0,0,0.06); cursor: pointer; font-weight: 700;
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  min-height: 46px; padding: var(--s-1_5) var(--s-3) var(--s-1_5) var(--s-2); border-radius: var(--r-md);
+  background: #fff; color: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--hairline-2), 0 1px 2px rgba(38, 26, 74, 0.1);
+  cursor: pointer; font-weight: 700; font-size: var(--fs-md);
+  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
-.cond-dot { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 -3px 0 rgba(0,0,0,0.2); }
-.cond-dot.c-p { background: #ff6fae; } .cond-dot.c-b { background: #4db3ff; }
-.cond-dot.c-g { background: #58cc6d; } .cond-dot.c-o { background: #ffa53d; }
-.cond-pick { display: flex; gap: 4px; }
-.cond-pick .token { width: 34px; height: 34px; font-size: 16px; }
+.cond-slot .cond-arrow {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; height: 30px; border-radius: var(--r-xs); color: var(--ink-3);
+}
+/* The empty binder matches the empty program slot exactly — same dash, same
+   weight, same contrast — because it is the same idea: a hole a command goes
+   in. It used to be a two-tone whisper with `color: transparent`, which is to
+   say nothing at all told a child the box was tappable. */
+.cond-slot .cond-arrow.empty {
+  color: rgba(36, 29, 61, 0.42);
+  outline: 2px dashed rgba(36, 29, 61, 0.55); outline-offset: -2px;
+  background: rgba(36, 29, 61, 0.03);
+}
+.cond-slot .cond-arrow .ui-icon { width: 22px; height: 22px; }
+@media (hover: hover) { .cond-slot:hover { box-shadow: inset 0 0 0 2px var(--purple), 0 2px 6px rgba(38, 26, 74, 0.16); } }
+.cond-slot:active { transform: scale(0.96); transition-duration: 60ms; }
+.cond-dot {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2), inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 1px 2px rgba(38, 26, 74, 0.25);
+}
+/* Matching the dot to the tile is the entire mechanic of World 2, so these
+   four values are not written here at all: hud.js reads them off the renderer
+   at boot and sets --cond-* on :root. A hex duplicated in CSS is a hex that
+   drifts from the board the first time the tile shader is touched, and it
+   had. The fallbacks are only for a stylesheet loaded without the game. */
+.cond-dot.c-p { background: var(--cond-p, #ff6fae); }
+.cond-dot.c-b { background: var(--cond-b, #4db3ff); }
+.cond-dot.c-g { background: var(--cond-g, #58cc6d); }
+.cond-dot.c-o { background: var(--cond-o, #ffa53d); }
+.cond-pick { display: flex; gap: var(--s-1); }
+.cond-pick .token { width: 34px; height: 34px; min-width: 34px; font-size: var(--fs-sm); }
 
-.run-controls { display: flex; gap: 10px; justify-content: center; }
-.utility-controls { display: flex; gap: 8px; }
-.utility-btn, .hint-btn { padding-inline: 16px; font-size: 16px; }
+/* ---------- run controls ------------------------------------------------- */
+/* The right-hand column of the console card. Secondary row on top, the two
+   hero buttons under it, so the eye finishes on RUN in the bottom-right
+   corner — and so the whole dock is one object instead of a card with a
+   detached strip of buttons floating under it. */
+.run-controls {
+  flex: none; width: 396px;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border-left: 1px solid var(--hairline);
+  background: rgba(36, 29, 61, 0.035);
+}
+.utility-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-1_5); }
+.hero-controls { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.hero-controls > .btn.big { width: 100%; min-width: 0; padding-inline: var(--s-3); }
+.utility-btn, .hint-btn {
+  padding-inline: var(--s-2); font-size: var(--fs-xs); min-height: var(--tap);
+  gap: var(--s-1); min-width: 0;
+}
 
-/* ---------- results modal ---------- */
+/* ---------- results modal ------------------------------------------------ */
 .modal-wrap {
   position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: rgba(20, 14, 40, 0.55); backdrop-filter: blur(3px); pointer-events: auto; z-index: 50;
+  padding: var(--s-5);
+  background: rgba(18, 11, 42, 0.55);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  pointer-events: auto; z-index: 50;
+  animation: fade-in var(--dur-3) var(--ease-out) both;
 }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .modal {
-  background: var(--paper); border-radius: 26px; padding: 30px 40px; text-align: center;
-  box-shadow: 0 18px 50px rgba(0,0,0,0.45); animation: pop-in 0.35s cubic-bezier(0.34,1.56,0.64,1);
-  max-width: min(92vw, 460px);
+  background: var(--paper); border-radius: var(--r-xl);
+  padding: var(--s-8) var(--s-10) var(--s-6);
+  text-align: center;
+  box-shadow: var(--edge-hi), var(--shadow-4);
+  animation: pop-in var(--dur-4) var(--ease-spring) both;
+  max-width: min(92vw, 520px);
 }
-.modal h2 { font-size: 34px; margin-bottom: 6px; }
-.modal .stars-row { font-size: 52px; letter-spacing: 6px; margin: 10px 0; }
-.modal .stars-row .dim { filter: grayscale(1) opacity(0.35); }
-.modal .earn-line { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
-.modal .modal-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-@keyframes pop-in { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal h2 { font-size: var(--fs-2xl); font-weight: 700; margin-bottom: var(--s-1); }
+.modal .stars-row {
+  display: flex; align-items: center; justify-content: center; gap: var(--s-2);
+  margin: var(--s-4) 0 var(--s-3);
+}
+/* Stars land one after another rather than all at once. */
+.modal .stars-row .ui-icon:not(.dim) { animation: star-pop 520ms var(--ease-spring) both; }
+.modal .stars-row .ui-icon:nth-child(1) { animation-delay: 120ms; }
+.modal .stars-row .ui-icon:nth-child(2) { animation-delay: 280ms; }
+.modal .stars-row .ui-icon:nth-child(3) { animation-delay: 440ms; }
+@keyframes star-pop {
+  0%   { transform: scale(0.2) rotate(-35deg); opacity: 0; }
+  60%  { transform: scale(1.18) rotate(6deg); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+/* Block-level flex, not inline-flex: the perfect banner and the coin line are
+   two separate statements and must not share a row. */
+.modal .earn-line {
+  display: flex; align-items: center; justify-content: center; gap: var(--s-1_5);
+  font-size: var(--fs-md); font-weight: 600; color: var(--ink-2);
+  margin-top: var(--s-2);
+}
+.modal .earn-line.perfect { color: var(--gold-dk); font-weight: 700; }
+/* A grid, not a wrapping flex row. Three buttons came to ~495px inside a
+   390px content box, so flex-wrap silently dropped the *primary* action —
+   Next — onto a second line below the two secondaries, which is the exact
+   inverse of the hierarchy. Here Next always spans the top row and the two
+   secondaries share the one below it, at every width. */
+.modal .modal-btns {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3);
+  margin-top: var(--s-5);
+}
+.modal .modal-btns > .btn { min-width: 0; padding-inline: var(--s-4); }
+.modal .modal-btns > .btn.green { grid-column: 1 / -1; order: -1; }
+@keyframes pop-in {
+  from { transform: scale(0.82) translateY(16px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
 
-/* ---------- toasts ---------- */
-#toasts { position: fixed; top: 18px; right: 18px; display: flex; flex-direction: column; gap: 10px; z-index: 99; pointer-events: none; }
+/* ---------- toasts ------------------------------------------------------- */
+/* Clear of the coin counter, which sits at top 12 / right 16 and is 40 tall.
+   The stack used to start at 18px and land squarely on it, so the instant a
+   child earned coins the counter showing the new total was hidden by the toast
+   announcing it. */
+#toasts {
+  position: fixed; top: 80px; right: var(--s-5);
+  display: flex; flex-direction: column; gap: var(--s-3);
+  z-index: 99; pointer-events: none;
+}
 .toast {
-  display: flex; gap: 10px; align-items: center; background: var(--paper); border-radius: 16px;
-  padding: 12px 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); min-width: 260px;
-  animation: toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1);
-  border-left: 8px solid var(--gold);
+  display: flex; gap: var(--s-3); align-items: center;
+  background: var(--paper); border-radius: var(--r-lg);
+  padding: var(--s-3) var(--s-5) var(--s-3) var(--s-4);
+  box-shadow: var(--edge-hi), var(--shadow-4);
+  min-width: 268px;
+  animation: toast-in var(--dur-4) var(--ease-spring) both;
+  border-left: var(--s-2) solid var(--gold);
 }
-.toast .t-icon { font-size: 30px; }
-.toast h5 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6; }
-.toast p { font-size: 16px; font-weight: 700; }
-.toast.out { animation: toast-out 0.3s forwards; }
-@keyframes toast-in { from { transform: translateX(120%);} to { transform: translateX(0);} }
-@keyframes toast-out { to { transform: translateX(120%); opacity: 0; } }
+.toast.k-badge { border-left-color: var(--purple); }
+.toast .t-icon {
+  width: 44px; height: 44px; flex: none; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--paper-2); font-size: var(--fs-2xl);
+}
+/* The kicker — "Achievement!", "Badge earned!" — and only that. */
+.toast h5 {
+  font-size: var(--fs-3xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-3);
+}
+.toast p { font-size: var(--fs-md); font-weight: 700; line-height: var(--lh-tight); margin: var(--s-0_5) 0; }
+/* The reward line is a *reward*, not a second label. Passing it through the
+   kicker style set "+10 coins" as 11px uppercase micro-type with 0.08em
+   tracking, and ran whole sentences of badge description through the same. */
+.toast .t-sub {
+  font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2);
+  line-height: var(--lh-snug); text-transform: none; letter-spacing: 0;
+  display: flex; align-items: center; gap: var(--s-1);
+}
+.toast .t-sub .ui-icon { width: 15px; height: 15px; }
+.toast.out { animation: toast-out var(--dur-2) var(--ease-both) forwards; }
+@keyframes toast-in {
+  from { transform: translateX(115%) scale(0.94); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes toast-out {
+  to { transform: translateX(115%) scale(0.96); opacity: 0; }
+}
 
-@media (max-width: 700px) {
-  .topbar { padding: 10px 12px; gap: 8px; }
-  .topbar .title { font-size: 20px; }
-  .coin-pill { padding: 7px 11px; font-size: 15px; }
-  .char-layout { flex-direction: column; }
-  .char-list { width: 100%; max-height: 45%; }
-  .token { width: 40px; height: 40px; font-size: 19px; }
-  .btn.big { font-size: 20px; padding: 13px 18px; }
-  .hud-top { padding: 10px 12px; }
-  .hud-top .lv-name { font-size: 16px; padding: 9px 14px; line-height: 1.05; }
-  .hud-msg { top: 76px; font-size: 14px; max-width: 76%; border-radius: 22px; padding: 8px 15px; }
-  .level-goals { top: 152px; white-space: normal; width: calc(100% - 24px); justify-content: center; flex-wrap: wrap; }
-  .level-goals span { font-size: 10px; padding: 5px 8px; }
-  .hud-bottom { padding: 7px 10px 10px; gap: 7px; }
-  .tray { padding: 7px 9px; gap: 6px; }
-  .tray .tray-label { width: 64px; font-size: 12px; }
-  .slot-row { min-height: 40px; }
+/* ==========================================================================
+   Responsive
+   The device floor is an iPad in either orientation (1112x834 / 834x1112) and
+   Chromebooks, so the breakpoints are keyed to portrait-tablet width and to
+   short viewports — not to phone widths that this game never sees.
+   ========================================================================== */
+
+/* Portrait iPad and small laptops. Below this the console's two columns no
+   longer both fit, so the run controls go back to being a full-width row —
+   still inside the card, so the dock stays one object. */
+@media (max-width: 1000px) {
+  .topbar { padding: var(--s-3) var(--s-4) var(--s-2); }
+  .topbar .title { font-size: var(--fs-lg); }
+  .panel-scroll { padding-inline: var(--s-4); }
+  .world-grid { gap: var(--s-4); }
+  .char-list { width: min(52%, 460px); padding-inline: var(--s-4); }
+  .char-detail { padding: var(--s-4) var(--s-4) var(--s-6); }
+  .console { display: block; width: 100%; min-width: 0; }
   .run-controls {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
+    width: auto; flex-direction: row; align-items: center;
+    justify-content: space-between; gap: var(--s-3);
+    border-left: none; border-top: 1px solid var(--hairline);
   }
-  .utility-controls { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-  .utility-controls .btn { min-width: 0; padding: 9px 5px; font-size: 12px; gap: 3px; }
-  .run-controls > .btn.big { width: 100%; min-width: 0; }
-  #toasts { left: 12px; right: 12px; top: 12px; }
+  .utility-controls { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  .hero-controls { display: flex; gap: var(--s-3); }
+  .hero-controls > .btn.big { width: auto; padding-inline: var(--s-6); }
+  .utility-btn, .hint-btn { padding-inline: var(--s-3); font-size: var(--fs-xs); }
+  .hud-bottom { padding-inline: var(--s-3); }
+  .tray { padding-inline: var(--s-3); }
+  .tray-head { width: 68px; }
+}
+
+/* Short viewports. Landscape iPad is 834px tall before browser chrome and
+   Chromebooks are often 768, so this is the *common* case, not the edge one —
+   the threshold is deliberately generous. The board keeps its room by the
+   console losing height, never by controls losing tap area. */
+@media (max-height: 900px) {
+  .hud-top { padding-block: var(--s-2); }
+  .hud-coach { top: 72px; }
+  .hud-msg { font-size: var(--fs-sm); padding: var(--s-2) var(--s-5); }
+  .hud-bottom { gap: var(--s-2); padding-block: var(--s-1) var(--s-3); }
+  .tray { min-height: 60px; padding-block: var(--s-1_5); }
+  .slot-row { min-height: 48px; }
+  .btn.big { font-size: var(--fs-lg); padding: var(--s-3) var(--s-6); min-height: 52px; }
+  .modal { padding: var(--s-6) var(--s-8) var(--s-5); }
+  .modal .stars-row .ui-icon { width: 44px; height: 44px; }
+}
+
+/* Very short landscape — a 1280x620 browser window, an iPad with a keyboard
+   accessory bar up. Here the dock was eating 41% of the screen and the board
+   was down to a third of it. Everything below is height coming *out of the
+   chrome*: the row labels shrink to a narrow rail, the "tap a command" hints
+   go (the beckoning slot says the same thing without a line of type), the goal
+   chip goes, and RUN drops to a still-comfortable 46px. Tap targets are
+   untouched. */
+@media (max-height: 700px) {
+  .hud-top { padding-block: var(--s-1); }
+  .hud-top .lv-name { font-size: var(--fs-sm); padding: var(--s-2) var(--s-3); }
+  .icon-btn { width: var(--tap); height: var(--tap); }
+  .token { width: 46px; height: 46px; min-width: 46px; }
+  .tray { min-height: 52px; padding-block: var(--s-1); gap: var(--s-2); }
+  .slot-row { min-height: 44px; padding-block: 0; }
+  .tray-head { width: 56px; }
+  .tray .tray-label { font-size: var(--fs-3xs); }
+  .tray-count { padding: 0 var(--s-1_5); }
+  .tray-count .tc-now { font-size: var(--fs-xs); }
+  .slot-hint { display: none; }
+  .level-goals { display: none; }
+  .hud-coach { top: 60px; }
+  .hud-bottom { padding-block: 0 var(--s-2); }
+  .btn.big { min-height: 46px; font-size: var(--fs-md); padding: var(--s-2) var(--s-5); }
+  .utility-btn, .hint-btn { min-height: 40px; }
+  .run-controls { padding-block: var(--s-2); }
+}
+
+/* Phone-width fallback. Kept because Chromebooks in tablet mode and split
+   view can get this narrow. */
+@media (max-width: 700px) {
+  .topbar { padding: var(--s-2) var(--s-3); gap: var(--s-2); }
+  .coin-pill { padding: var(--s-1_5) var(--s-3); font-size: var(--fs-sm); }
+  .char-layout { flex-direction: column; }
+  .char-list { width: 100%; max-height: 46%; }
+  .btn.big { font-size: var(--fs-md); padding: var(--s-3) var(--s-5); }
+  .hud-top { padding: var(--s-2) var(--s-3); }
+  .hud-top .lv-name { font-size: var(--fs-sm); padding: var(--s-2) var(--s-3); line-height: var(--lh-tight); }
+  .hud-coach { top: 64px; max-width: calc(100% - var(--s-5)); }
+  .hud-msg { font-size: var(--fs-sm); padding: var(--s-2) var(--s-4); }
+  .level-goals span { font-size: var(--fs-3xs); padding: var(--s-1) var(--s-3); }
+  .hud-bottom { padding: var(--s-1) var(--s-2) var(--s-3); gap: var(--s-2); }
+  .tray { padding: var(--s-1_5) var(--s-2); gap: var(--s-2); min-height: 62px; flex-wrap: wrap; }
+  .tray-head { width: 100%; flex-direction: row; align-items: center; gap: var(--s-2); }
+  .run-controls { display: grid; grid-template-columns: 1fr; gap: var(--s-2); padding: var(--s-3); }
+  .utility-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-1_5); }
+  .utility-controls .btn { min-width: 0; padding: var(--s-2) var(--s-1); font-size: var(--fs-3xs); gap: var(--s-1); }
+  .hero-controls { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+  .hero-controls > .btn.big { width: 100%; min-width: 0; padding-inline: var(--s-3); }
+  #toasts { left: var(--s-3); right: var(--s-3); top: 68px; }
   .toast { min-width: 0; width: 100%; }
+  .modal { padding: var(--s-6) var(--s-5) var(--s-5); }
 }
 
 @media (max-width: 430px) {
-  .icon-btn { width: 46px; height: 46px; }
-  .hud-top .lv-name { max-width: 205px; }
-  .hud-msg { top: 70px; }
-  .level-goals { top: 146px; }
-  .game-logo .tagline { font-size: 16px; padding-inline: 20px; }
-  .menu-row .btn { padding-inline: 16px; font-size: 17px; }
+  .icon-btn { width: var(--tap); height: var(--tap); }
+  .hud-top .lv-name { max-width: 200px; }
+  .game-logo .tagline { font-size: var(--fs-sm); padding-inline: var(--s-5); }
+  .menu-row .btn { padding-inline: var(--s-4); font-size: var(--fs-md); }
 }
 
+/* ==========================================================================
+   Reduced motion — no exceptions. Every animation above is decorative;
+   nothing here carries information that the static state does not.
+   ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-  .game-logo { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .game-logo, .token.executing, .token.ghost-slot.next { animation: none; }
+  /* The executing chip still needs to be findable without the pulse. */
+  .token.executing { box-shadow: inset 0 0 0 2.5px var(--tk-mid), 0 0 0 5px var(--gold); }
 }

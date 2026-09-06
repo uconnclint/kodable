@@ -1,22 +1,163 @@
 // Three.js scene, camera, lights, sky, clouds, particles, render loop.
 import * as THREE from 'three';
+import { flags, tier, caps, onQualityChange, pixelRatioFor, noteFrame } from './quality.js';
+import { createSky, createEnvironment } from './sky.js';
+import { createRig } from './lighting.js';
+import { createComposer } from './postfx.js';
 
+// Each theme now carries a full lighting description, not just two flat
+// colours. `sky`/`fog`/`grass`/`dirt`/`deco` are unchanged and still consumed
+// by world.js; everything after them drives the dome, the environment map and
+// the three-point rig.
+//
+//   zenith/horizon/ground  the visible sky gradient. `ground` is what fills the
+//                          frame below the horizon -- the camera looks *down*,
+//                          so this is most of the screen, and it has to read as
+//                          deep atmosphere, not as a floor.
+//   bounce                 the below-horizon colour the environment map is
+//                          baked with instead of `ground`: the light bouncing
+//                          up off a meadow really is green, but a green screen
+//                          is not.
+//   sun / sunDir / sunGlow the visible sun wash and the key light's direction.
+//   key / fill / rim       colour temperature of the three lights.
+//   exposure               per-theme tone-mapping exposure. Dark worlds need
+//                          more of it or the tone curve crushes them.
+//   envIntensity           how much of the sky's ambient reaches materials.
 export const WORLD_THEMES = {
-  0: { sky: 0x8f7bff, fog: 0xa495ff, grass: 0x7ecb5f, dirt: 0x8a5a3c, deco: 'meadow' },
-  1: { sky: 0x9adfff, fog: 0xbfeaff, grass: 0x7ecb5f, dirt: 0x8a5a3c, deco: 'meadow' },
-  2: { sky: 0x2e2b52, fog: 0x45408a, grass: 0x6fc7c7, dirt: 0x4a4270, deco: 'crystal' },
-  3: { sky: 0xffc98a, fog: 0xffddb0, grass: 0xe8a25c, dirt: 0xb05f2e, deco: 'canyon' },
-  4: { sky: 0xa8ccff, fog: 0xc9e0ff, grass: 0x6fa8ff, dirt: 0x3e5a8a, deco: 'tech' },
-  5: { sky: 0x3a2f4a, fog: 0x584a6e, grass: 0x9aa7b8, dirt: 0x5a6270, deco: 'storm' },
+  // Menu / world-select: a warm dusk that flatters every character colour.
+  0: {
+    sky: 0x8f7bff, fog: 0xb69cff, grass: 0x7ecb5f, dirt: 0x8a5a3c, deco: 'meadow',
+    zenith: 0x5535ad, horizon: 0xd3b6ff, ground: 0x9877e0, bounce: 0x5a4090,
+    cloud: 0xffe6f7, clouds: true,
+    sun: 0xffd9c0, sunDir: [0.5, 0.9, 0.5], sunGlow: 0.45, skyFalloff: 0.75,
+    key: 0xfff0e2, keyIntensity: 1.95, fill: 0xa88cff, fillIntensity: 0.40,
+    rim: 0xffb0e8, rimIntensity: 0.95, exposure: 1.0, envIntensity: 0.7,
+  },
+  // Meadow: bright, high-key daylight.
+  1: {
+    sky: 0x9adfff, fog: 0xcdefff, grass: 0x7ecb5f, dirt: 0x8a5a3c, deco: 'meadow',
+    zenith: 0x3ea7f5, horizon: 0xd9f3ff, ground: 0x8ed2f5, bounce: 0x74ad5a,
+    cloud: 0xffffff, clouds: true,
+    sun: 0xfff2d2, sunDir: [0.42, 1.0, 0.46], sunGlow: 0.45, skyFalloff: 0.7,
+    key: 0xfff4dc, keyIntensity: 2.0, fill: 0xbfe4ff, fillIntensity: 0.38,
+    rim: 0xffe6b4, rimIntensity: 0.8, exposure: 1.0, envIntensity: 0.65,
+  },
+  // Crystal cavern: no sky at all, so the "sun" is a cold shaft from above and
+  // the ambient is a violet glow off the cavern walls.
+  2: {
+    sky: 0x2e2b52, fog: 0x4a3f86, grass: 0x6fc7c7, dirt: 0x4a4270, deco: 'crystal',
+    zenith: 0x140f2e, horizon: 0x6350bb, ground: 0x241b52, bounce: 0x4a3d92,
+    cloud: 0x8f7fd8, clouds: false,
+    sun: 0xa9d6ff, sunDir: [0.3, 1.05, 0.4], sunGlow: 0.3, skyFalloff: 0.5,
+    key: 0xd6e6ff, keyIntensity: 2.15, fill: 0x8a6cff, fillIntensity: 0.40,
+    rim: 0x63f2e0, rimIntensity: 1.3, exposure: 1.15, envIntensity: 1.05,
+  },
+  // Canyon: warm high sun, dusty peach horizon.
+  3: {
+    // Deeper rock than the original sandy 0xe8a25c: gold stars sitting on a
+    // pale orange tile were nearly the same value, and tone mapping narrowed
+    // the gap further. Dropping the tile a stop made the collectables read --
+    // and dropped it straight into the backdrop, which was a pale orange of
+    // almost exactly the same luminance. Board against sky measured 1.06:1:
+    // only a hue shift separated the playfield from the air around it. The
+    // second half of the fix is therefore in the sky, not the tile. `ground`
+    // (most of the frame, since the camera looks down) goes to a deep canyon
+    // shade and `horizon` loses its milkiness, while `bounce` stays warm so the
+    // ambient coming back up onto the island does not go cold with them.
+    sky: 0xffc98a, fog: 0xffe0bb, grass: 0xdb8843, dirt: 0xa1522a, deco: 'canyon',
+    zenith: 0xef7a2e, horizon: 0xf2b177, ground: 0x6d3524, bounce: 0xb0663a,
+    cloud: 0xfff0dc, clouds: true,
+    sun: 0xfff0cf, sunDir: [0.55, 0.9, 0.45], sunGlow: 0.6, skyFalloff: 0.85,
+    key: 0xffe7bd, keyIntensity: 1.95, fill: 0xffd2a6, fillIntensity: 0.36,
+    rim: 0xfff3cc, rimIntensity: 0.95, exposure: 0.95, envIntensity: 0.6,
+  },
+  // Tech: clean, cool, slightly clinical daylight.
+  4: {
+    sky: 0xa8ccff, fog: 0xd2e8ff, grass: 0x6fa8ff, dirt: 0x3e5a8a, deco: 'tech',
+    zenith: 0x2560c8, horizon: 0xdaefff, ground: 0x74a8e4, bounce: 0x5b81b8,
+    cloud: 0xf2faff, clouds: true,
+    sun: 0xffffff, sunDir: [0.38, 1.0, 0.46], sunGlow: 0.4, skyFalloff: 0.65,
+    key: 0xffffff, keyIntensity: 1.95, fill: 0xc2ddff, fillIntensity: 0.40,
+    rim: 0x9ef0ff, rimIntensity: 1.0, exposure: 1.0, envIntensity: 0.72,
+  },
+  // Storm: overcast, low contrast, one warm break in the cloud for the rim.
+  5: {
+    sky: 0x3a2f4a, fog: 0x5f5177, grass: 0x9aa7b8, dirt: 0x5a6270, deco: 'storm',
+    zenith: 0x1d1729, horizon: 0x7f6b95, ground: 0x342b42, bounce: 0x4e4459,
+    cloud: 0x9b90ad, clouds: true,
+    sun: 0xffd7c0, sunDir: [0.5, 0.85, 0.42], sunGlow: 0.35, skyFalloff: 0.6,
+    key: 0xe6e9ff, keyIntensity: 2.0, fill: 0x9a8cc0, fillIntensity: 0.40,
+    rim: 0xff9a70, rimIntensity: 1.45, exposure: 1.1, envIntensity: 0.8,
+  },
 };
 
 export const TILE_COLORS = { p: 0xff6fae, b: 0x4db3ff, g: 0x58cc6d, o: 0xffa53d };
 
-let renderer, scene, camera;
+// Vertical field of view *of the visible canvas*, in degrees. Tighter than the
+// old 42 deg: less perspective spread across a board that is mostly flat, which
+// reads more like a physical toy and keeps distant tiles the same size as near
+// ones. The camera's own `fov` is derived from this and is usually larger,
+// because the projection is offset (see updateProjection).
+const BASE_FOV = 34;
+// The camera sits on this fixed direction from the board centre. Slightly
+// lower than the old rig so tile sides and the island underside are visible,
+// which is where all the new lighting shows up.
+const VIEW_DIR = new THREE.Vector3(0, 0.80, 0.60).normalize();
+// Fraction of the usable band the board is allowed to occupy.
+const FIT_MARGIN = 0.94;
+// How far the lens may be shifted, as a fraction of the canvas. A shift is free
+// (see updateProjection) but a big one makes the virtual frame tall enough that
+// the derived fov starts to spread the perspective, so it is bounded.
+const MAX_SHIFT = 0.40;
+// Default vertical extent worth framing, in world units either side of the
+// board plane: the tile tops, Bloop and the floating stars, plus a little of
+// the island underside. Callers that know their own island (how deep its keel
+// hangs, how high its stars float) override these through frameView's opts;
+// these are the fallback for anyone who does not.
+const DEFAULT_Y_LO = -0.9;
+const DEFAULT_Y_HI = 0.78;
+// Where the board's projected bounds sit horizontally, as a fraction of the
+// canvas, per screen. The play screen centres it. The menu family parks it in
+// the right third, because those screens stack their buttons down the middle of
+// the canvas: with the island centred underneath, PLAY covered its centre,
+// Bloop hid behind "Bloops" and the exit portal behind the subtitle, so the
+// board read as a texture the panel was printed on rather than as a place the
+// panel is floating in front of.
+const ALIGN_X = { play: 0.5, backdrop: 0.7, hero: 0.5 };
+// Extra scale, for the other half of the same problem: fitted to the band, the
+// menu island was a chip in the middle of an otherwise empty purple frame.
+// Overscaling it -- and letting the frame crop it, as a backdrop should be
+// cropped -- is what turns it from an object on the screen into somewhere the
+// screen is looking.
+const ZOOM = { play: 1, backdrop: 1.8, hero: 1 };
+
+let renderer, scene, camera, sky, env, rig, post;
+let theme = WORLD_THEMES[1];
+let themeKey = 1;
 const updaters = new Set();
 let clouds = [];
+let cloudMat = null;
+let cloudGroup = null;
 let lastFrameTime = performance.now();
 let elapsedTime = 0;
+
+// Framing state. `camEye`/`camLook` are the settled camera; the frame loop adds
+// the idle drift on top so a running tween and the drift never fight.
+const framing = {
+  center: new THREE.Vector3(), spanX: 6, spanZ: 6,
+  yLo: DEFAULT_Y_LO, yHi: DEFAULT_Y_HI,
+};
+// The current framing solution. `dist` is the camera distance that fits the
+// board; `cx`/`cy` are where the board's projected bounds ended up in NDC,
+// relative to the point the camera is aimed at, and are what the lens shift
+// cancels out. Kept as state because measuring and shifting are two different
+// steps that run at different times (a HUD resize re-shifts without re-solving).
+const solved = { dist: 12, cx: 0, cy: 0 };
+const camEye = new THREE.Vector3(0, 12, 11);
+const camLook = new THREE.Vector3(0, 0, 0);
+let bandTop = 0, bandBottom = 0;
+let bandPoll = 0;
+let framedMode = '';
 
 export function initRenderer() {
   const canvas = document.getElementById('gl');
@@ -29,90 +170,413 @@ export function initRenderer() {
   const probe = document.createElement('canvas').getContext('webgl2');
   if (!probe) {
     const fail = globalThis.__blooptopiaFail;
-    if (fail) fail('This device\u2019s graphics support is too old to run Blooptopia.', 'update');
+    if (fail) fail('This device’s graphics support is too old to run Blooptopia.', 'update');
     throw new Error('WebGL2 is not available on this device.');
   }
   probe.getExtension('WEBGL_lose_context')?.loseContext();
 
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
+  const f = flags();
+  // Default-framebuffer MSAA only matters on the low tier, where there is no
+  // post-processing chain to do it in a render target instead.
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: !f.postFX, powerPreference: 'high-performance' });
+  renderer.shadowMap.enabled = f.shadows;
+  // PCFShadowMap, not PCFSoftShadowMap: three r185 deprecated the latter and
+  // silently rewrites it to PCF anyway. The current PCF kernel is a jittered
+  // five-tap Vogel disk driven by `light.shadow.radius`, so softness is a
+  // per-light setting now (see lighting.js) rather than a global mode.
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // Neutral rather than ACESFilmic. ACES is built for camera-referred footage:
+  // it rolls saturated primaries towards grey, which is precisely what this
+  // palette cannot afford -- the pink and blue condition tiles have to stay
+  // instantly distinguishable to a six-year-old. Neutral (Khronos PBR neutral)
+  // keeps hue and saturation until it has to compress, so highlights stop
+  // clipping without the candy colours going chalky.
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = theme.exposure;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 400);
+  camera.position.copy(camEye);
+  camera.lookAt(camLook);
+  updateProjection(); // seeds the usable band before anything asks to be fitted
 
-  camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
-  camera.position.set(0, 12, 11);
-  camera.lookAt(0, 0, 0);
-
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x8877aa, 0.9);
-  scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff2d8, 1.6);
-  sun.position.set(6, 14, 5);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -12; sun.shadow.camera.right = 12;
-  sun.shadow.camera.top = 12; sun.shadow.camera.bottom = -12;
-  sun.shadow.camera.far = 50;
-  scene.add(sun);
-
+  sky = createSky(scene);
+  env = createEnvironment(renderer);
+  rig = createRig(scene);
   makeClouds();
+  applyTheme(1);
+
+  onQualityChange(onTierChange);
 
   window.addEventListener('resize', resize);
   resize();
+  if (flags().postFX) {
+    post = createComposer(renderer, scene, camera);
+    post.setSize(innerWidth, innerHeight);
+  }
   renderer.setAnimationLoop(tick);
+  console.info(`[render] tier=${tier()} gpu=${caps().gpu} dpr=${renderer.getPixelRatio().toFixed(2)}`);
   return { scene, camera, renderer };
+}
+
+function onTierChange() {
+  const f = flags();
+  renderer.shadowMap.enabled = f.shadows;
+  rig.applyShadowQuality();
+  rig.fit(framing.center, framing.spanX, framing.spanZ);
+  if (post) { post.dispose(); post = null; }
+  if (f.postFX) post = createComposer(renderer, scene, camera);
+  applyTheme(themeKey);
+  resize();
 }
 
 function resize() {
   const w = innerWidth, h = innerHeight;
+  renderer.setPixelRatio(pixelRatioFor(w, h));
   renderer.setSize(w, h);
-  camera.aspect = w / h;
+  updateProjection();
+  refit();
+  if (post) post.setSize(w, h);
+}
+
+// ---- framing ---------------------------------------------------------------
+
+// Which of the three framing treatments the screen on stage wants. Screens are
+// added and removed by the router rather than hidden, so their presence in the
+// document is the whole test.
+function screenMode() {
+  if (document.getElementById('screen-play')) return 'play';
+  if (document.getElementById('screen-menu')
+    || document.getElementById('screen-worldmap')
+    || document.getElementById('screen-levels')) return 'backdrop';
+  return 'hero';
+}
+
+// The usable band is the part of the canvas the HUD is not sitting on. The old
+// frameView centred the board in the *whole* viewport, so on the play screen it
+// floated in the empty top third while its bottom edge slid under the program
+// trays. Measured rather than hard-coded, because the trays grow as the player
+// adds command tokens.
+function measureBand() {
+  const h = innerHeight;
+  const play = document.getElementById('screen-play');
+  // Menu and world-map screens put their buttons straight over the middle of
+  // the canvas, so their backdrop board is deliberately framed loose: it is
+  // scenery behind the UI, not the thing being read. It is also pushed sideways
+  // and overscaled -- see ALIGN_X / ZOOM.
+  if (!play) return { top: h * 0.22, bottom: h * 0.83 };
+
+  // On the play screen the board *is* the subject, so it gets everything the
+  // HUD is not using. Deliberately class-name agnostic: the HUD markup belongs
+  // to another module. Anything parked in the top half raises the ceiling,
+  // anything in the bottom half lowers the floor, and anything spanning the
+  // middle (the flex spacer, a results modal) is ignored -- the board should
+  // not jump when a dialog opens.
+  let top = h * 0.08;
+  let bottom = h * 0.94;
+  for (const el of play.children) {
+    const r = el.getBoundingClientRect();
+    if (r.height < 4 || r.width < 4) continue;
+    if (r.bottom <= h * 0.5) top = Math.max(top, r.bottom);
+    else if (r.top >= h * 0.5) bottom = Math.min(bottom, r.top);
+  }
+  top += h * 0.015;
+  bottom -= h * 0.01;
+  if (bottom - top < h * 0.25) { // pathological layout: fall back to the middle
+    const mid = (top + bottom) / 2;
+    top = mid - h * 0.125; bottom = mid + h * 0.125;
+  }
+  return { top, bottom };
+}
+
+// Re-measures the usable band and re-aims the lens at the current framing
+// solution. Splitting the two matters: a HUD tray growing a row changes the
+// band four times a second, and re-shifting the lens for that is free, whereas
+// re-solving the distance is not.
+function updateProjection() {
+  const band = measureBand();
+  bandTop = band.top; bandBottom = band.bottom;
+  applyProjection();
+}
+
+// Offsets the projection so the board's projected *bounds* land where the
+// screen wants them -- vertically in the middle of the usable band, and
+// horizontally wherever ALIGN_X says -- while the scene still fills the whole
+// canvas. Doing it in the projection (a lens shift) rather than by tilting or
+// dollying the camera keeps the island's verticals parallel, which is what
+// makes the shift invisible.
+//
+// It aims at the bounds centre rather than at the board's own origin, and that
+// is the whole fix for the board sliding under the program tray: seen from 53
+// degrees above, a board's mass projects well below the point the camera is
+// aimed at, so "origin in the middle of the band" left the near rank of tiles,
+// and on a descending board the exit portal with them, under the panel.
+function applyProjection() {
+  const w = innerWidth, h = innerHeight;
+  const mode = screenMode();
+  const targetY = (bandTop + bandBottom) / 2;
+  const targetX = w * ALIGN_X[mode];
+  const clamp = THREE.MathUtils.clamp;
+  // NDC y is up, screen y is down, hence the sign flip on cy.
+  const shiftY = clamp(targetY - h / 2 + solved.cy * (h / 2), -h * MAX_SHIFT, h * MAX_SHIFT);
+  const shiftX = clamp(targetX - w / 2 - solved.cx * (w / 2), -w * MAX_SHIFT, w * MAX_SHIFT);
+
+  // The shift is expressed as a window onto a larger virtual frame. Widening
+  // the frame by twice the shift and parking the window at one end puts the
+  // projection axis exactly `shift` off centre; deriving the fov from the
+  // virtual height keeps the *visible* canvas subtending BASE_FOV whatever the
+  // shift is, so moving the board around the frame never changes its size.
+  const fullH = h + 2 * Math.abs(shiftY);
+  const fullW = w + 2 * Math.abs(shiftX);
+  camera.aspect = fullW / fullH;
+  camera.fov = THREE.MathUtils.radToDeg(
+    2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2) * fullH / h),
+  );
+  camera.setViewOffset(
+    fullW, fullH, Math.abs(shiftX) - shiftX, Math.abs(shiftY) - shiftY, w, h,
+  );
   camera.updateProjectionMatrix();
+}
+
+const _probe = new THREE.PerspectiveCamera();
+const _corner = new THREE.Vector3();
+
+// Solves for the camera distance that makes the board fill the usable band, and
+// records where the board's projected bounds ended up so applyProjection can
+// shift the lens onto them.
+//
+// The measurement is a true NDC bounding box -- min and max tracked separately
+// on both axes -- not the old max-absolute-deviation from the board's centre.
+// That distinction is what fixes the board's on-screen size wandering between
+// levels: on any board whose mass is off-axis (every diagonal staircase) one
+// side deviates much further than the other, and fitting to the larger side
+// alone shrank the board to half the frame and pushed it off centre with it.
+//
+// The probe is a clean, symmetric camera at BASE_FOV rather than a copy of the
+// real one. A lens shift only translates the image, so measuring without one
+// and solving for it afterwards stops the two steps chasing each other.
+// Projected size is very nearly proportional to 1/distance, so scaling the
+// distance by the current overshoot converges in two or three passes; the loop
+// is capped anyway.
+function solveFraming() {
+  const { center, spanX, spanZ, yLo, yHi } = framing;
+  const hx = spanX / 2 + 0.18;
+  const hz = spanZ / 2 + 0.18;
+  const zoom = ZOOM[screenMode()];
+  const availX = FIT_MARGIN;
+  const availY = ((bandBottom - bandTop) / innerHeight) * FIT_MARGIN;
+
+  _probe.fov = BASE_FOV;
+  _probe.aspect = innerWidth / innerHeight;
+  _probe.near = camera.near;
+  _probe.far = camera.far;
+  _probe.clearViewOffset();
+  _probe.updateProjectionMatrix();
+
+  let dist = Math.max(spanX, spanZ, 4) + 6;
+  let minX = 0, maxX = 0, minY = 0, maxY = 0;
+
+  for (let pass = 0; pass < 6; pass++) {
+    _probe.position.copy(center).addScaledVector(VIEW_DIR, dist);
+    _probe.lookAt(center);
+    _probe.updateMatrixWorld(true);
+    minX = minY = Infinity; maxX = maxY = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      _corner.set(
+        center.x + (i & 1 ? hx : -hx),
+        center.y + (i & 2 ? yHi : yLo),
+        center.z + (i & 4 ? hz : -hz),
+      ).project(_probe);
+      if (_corner.x < minX) minX = _corner.x;
+      if (_corner.x > maxX) maxX = _corner.x;
+      if (_corner.y < minY) minY = _corner.y;
+      if (_corner.y > maxY) maxY = _corner.y;
+    }
+    const over = Math.max(
+      (maxX - minX) / 2 / availX,
+      (maxY - minY) / 2 / availY,
+    ) / zoom;
+    dist = THREE.MathUtils.clamp(dist * over, 5, 160);
+    if (Math.abs(over - 1) < 0.004) break;
+  }
+
+  solved.dist = dist;
+  solved.cx = (minX + maxX) / 2;
+  solved.cy = (minY + maxY) / 2;
+}
+
+// Recomputes eye/look/shadow/fog for the current framing request. Cheap enough
+// to call on resize, on a HUD layout change and at the start of a tween.
+function refit(instant) {
+  framedMode = screenMode();
+  solveFraming();
+  applyProjection();
+  const dist = solved.dist;
+  const eye = new THREE.Vector3().copy(framing.center).addScaledVector(VIEW_DIR, dist);
+  if (instant) { camEye.copy(eye); camLook.copy(framing.center); }
+  rig.fit(framing.center, framing.spanX, framing.spanZ);
+  // Fog starts just past the board and closes well before the dome, so islands
+  // dissolve into the horizon instead of ending on a hard edge.
+  if (scene.fog) { scene.fog.near = dist * 1.15; scene.fog.far = dist * 3.4; }
+  return eye;
+}
+
+// Smoothly move the camera to frame a box of `spanX` by `spanZ` world units at
+// `center`. Options:
+//
+//   instant  cut instead of tweening.
+//   yLo      how far *below* center.y the framed box reaches, in world units.
+//   yHi      how far above it. Both optional: a caller that knows its own
+//            island -- how deep the keel hangs, how high the stars float, where
+//            the exit portal's arch tops out -- passes the real numbers, and
+//            anything that does not gets DEFAULT_Y_LO / DEFAULT_Y_HI. They are
+//            the difference between "the tile tops are in frame" and "the whole
+//            object is in frame", which on a descending board is the difference
+//            between seeing the exit and seeing half of it behind the tray.
+let camTween = null;
+export function frameView(center, spanX, spanZ, opts = {}) {
+  framing.center.set(center.x, 0, center.z);
+  framing.spanX = spanX;
+  framing.spanZ = spanZ;
+  framing.yLo = Number.isFinite(opts.yLo) ? opts.yLo : DEFAULT_Y_LO;
+  framing.yHi = Number.isFinite(opts.yHi) ? opts.yHi : DEFAULT_Y_HI;
+  const eye = refit(!!opts.instant);
+  if (opts.instant) return;
+
+  const from = camEye.clone();
+  const lookFrom = camLook.clone();
+  let t = 0;
+  if (camTween) camTween();
+  camTween = onFrame((dt) => {
+    t = Math.min(1, t + dt * 1.6);
+    const e = 1 - Math.pow(1 - t, 3);
+    camEye.lerpVectors(from, eye, e);
+    camLook.lerpVectors(lookFrom, framing.center, e);
+    if (t >= 1) { camTween(); camTween = null; }
+  });
+}
+
+// Slow, low-amplitude parallax. Three incommensurate periods so it never
+// visibly loops, and an amplitude around 2% of the view distance -- enough for
+// the scene to feel alive, far too little to move a tile off its neighbour.
+const _drift = new THREE.Vector3();
+const _look = new THREE.Vector3();
+function updateCamera(t) {
+  const amp = camEye.distanceTo(camLook) * 0.022;
+  _drift.set(
+    (Math.sin(t * 0.21) * 0.7 + Math.sin(t * 0.077) * 0.45) * amp,
+    Math.sin(t * 0.13) * 0.4 * amp,
+    Math.cos(t * 0.104) * 0.6 * amp,
+  );
+  camera.position.copy(camEye).add(_drift);
+  _look.copy(camLook).addScaledVector(_drift, 0.25);
+  camera.lookAt(_look);
 }
 
 function tick() {
   const now = performance.now();
-  const dt = Math.min((now - lastFrameTime) / 1000, 0.2);
+  const dtMs = now - lastFrameTime;
+  const dt = Math.min(dtMs / 1000, 0.2);
   lastFrameTime = now;
   elapsedTime += dt;
   const t = elapsedTime;
+  noteFrame(dtMs);
+
   for (const fn of [...updaters]) fn(dt, t);
+
+  // The HUD changes height as the player adds command tokens, so the usable
+  // band has to be re-measured -- but four getBoundingClientRect calls every
+  // frame is a layout read the browser does not need. Four times a second is
+  // imperceptible and free.
+  bandPoll += dt;
+  if (bandPoll > 0.25) {
+    bandPoll = 0;
+    const beforeH = bandBottom - bandTop;
+    const beforeTop = bandTop;
+    updateProjection();
+    // The router builds its backdrop before it builds the screen, so the very
+    // first frameView of a menu runs while the DOM still says "no screen" and
+    // gets the play framing. Watching the mode here is what lets the menu's
+    // offset and overscale land at all -- and it costs one string compare.
+    const mode = screenMode();
+    const modeChanged = mode !== framedMode;
+    framedMode = mode;
+    if (modeChanged
+      || Math.abs((bandBottom - bandTop) - beforeH) > 2 || Math.abs(bandTop - beforeTop) > 2) {
+      // Re-frame through the normal tween so the board eases into its new
+      // position instead of snapping when a tray grows a row of tokens. The
+      // caller's vertical extent is carried through: this is a re-fit of the
+      // same request, not a new one.
+      frameView(framing.center, framing.spanX, framing.spanZ,
+        { yLo: framing.yLo, yHi: framing.yHi });
+    }
+  }
+
   for (const c of clouds) {
     c.position.x += c.userData.speed * dt;
-    if (c.position.x > 30) c.position.x = -30;
+    if (c.position.x > 34) c.position.x = -34;
   }
   updateParticles(dt);
-  renderer.render(scene, camera);
+  updateCamera(t);
+  sky.follow(camera);
+
+  if (post) post.render(dt);
+  else renderer.render(scene, camera);
 }
 
 export function onFrame(fn) { updaters.add(fn); return () => updaters.delete(fn); }
 export function getScene() { return scene; }
 export function getCamera() { return camera; }
+export function getRenderer() { return renderer; }
 
 export function applyTheme(world) {
   const th = WORLD_THEMES[world] || WORLD_THEMES[0];
-  scene.background = new THREE.Color(th.sky);
-  scene.fog = new THREE.Fog(th.fog, 22, 60);
+  theme = th;
+  themeKey = WORLD_THEMES[world] ? world : 0;
+
+  // No flat background colour any more: the dome *is* the background, and it
+  // is the same gradient the environment map is baked from.
+  scene.background = null;
+  scene.environment = env.get(themeKey, th);
+  scene.environmentIntensity = th.envIntensity;
+  // Mutated, never replaced: three keys a material's compiled program on the
+  // fog *instance*, so handing the scene a fresh Fog on every level build would
+  // recompile every shared material (sky, clouds, Bloop, particles) each time.
+  if (!scene.fog) scene.fog = new THREE.Fog(th.horizon, 22, 60);
+  else scene.fog.color.setHex(th.horizon);
+
+  sky.apply(th);
+  rig.apply(th);
+  renderer.toneMappingExposure = th.exposure;
+
+  if (cloudMat) cloudMat.color.setHex(th.cloud);
+  if (cloudGroup) cloudGroup.visible = th.clouds !== false;
+
+  refit(false);
   return th;
 }
 
 // ---- clouds ----
 function makeClouds() {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 });
-  for (let i = 0; i < 10; i++) {
+  const detail = flags().detail;
+  cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 });
+  cloudGroup = new THREE.Group();
+  scene.add(cloudGroup);
+  const count = Math.max(4, Math.round(10 * detail));
+  for (let i = 0; i < count; i++) {
     const cloud = new THREE.Group();
     const n = 3 + Math.floor(Math.random() * 3);
     for (let j = 0; j < n; j++) {
-      const s = 0.7 + Math.random() * 1.1;
-      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), mat);
-      m.position.set(j * 1.1 - n * 0.5, Math.random() * 0.4, Math.random() * 0.8);
-      m.scale.y = 0.6;
+      const s = 0.9 + Math.random() * 1.4;
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), cloudMat);
+      m.position.set(j * 1.2 - n * 0.55, Math.random() * 0.5, Math.random() * 0.9);
+      m.scale.y = 0.55;
       cloud.add(m);
     }
-    cloud.position.set(Math.random() * 60 - 30, 6 + Math.random() * 6, -14 - Math.random() * 18);
+    cloud.position.set(Math.random() * 68 - 34, 5 + Math.random() * 9, -20 - Math.random() * 22);
     cloud.userData.speed = 0.2 + Math.random() * 0.4;
-    scene.add(cloud);
+    cloudGroup.add(cloud);
     clouds.push(cloud);
   }
 }
@@ -120,10 +584,21 @@ function makeClouds() {
 // ---- particles ----
 const particles = [];
 const particleGeo = new THREE.TetrahedronGeometry(0.09);
+// Burst materials are cached by colour. The old code allocated (and never
+// freed) a MeshBasicMaterial per burst, which on a long play session meant
+// hundreds of leaked GPU programs' worth of material state.
+const burstMats = new Map();
+
+function burstMaterial(color) {
+  let m = burstMats.get(color);
+  if (!m) { m = new THREE.MeshBasicMaterial({ color }); burstMats.set(color, m); }
+  return m;
+}
 
 export function burst(pos, color, count = 14, speed = 3, life = 0.7) {
-  const mat = new THREE.MeshBasicMaterial({ color });
-  for (let i = 0; i < count; i++) {
+  const mat = burstMaterial(color);
+  const n = Math.max(3, Math.round(count * flags().detail));
+  for (let i = 0; i < n; i++) {
     const m = new THREE.Mesh(particleGeo, mat);
     m.position.copy(pos);
     const a = Math.random() * Math.PI * 2;
@@ -154,34 +629,4 @@ function updateParticles(dt) {
     p.scale.setScalar(Math.max(k, 0.01));
     p.rotation.x += dt * 7; p.rotation.z += dt * 5;
   }
-}
-
-// Smoothly move camera to frame a box of given size at center.
-let camTween = null;
-export function frameView(center, spanX, spanZ, opts = {}) {
-  const dist = Math.max(spanX * 1.15, spanZ * 1.5, 6) + 4;
-  const target = new THREE.Vector3(center.x, 0, center.z);
-  const eye = new THREE.Vector3(center.x, dist * 0.95, center.z + dist * 0.78);
-  if (opts.instant) {
-    camera.position.copy(eye);
-    camera.lookAt(target);
-    return;
-  }
-  const from = camera.position.clone();
-  const lookFrom = currentLook();
-  let t = 0;
-  if (camTween) camTween();
-  camTween = onFrame((dt) => {
-    t = Math.min(1, t + dt * 1.6);
-    const e = 1 - Math.pow(1 - t, 3);
-    camera.position.lerpVectors(from, eye, e);
-    camera.lookAt(lookFrom.clone().lerp(target, e));
-    if (t >= 1) { camTween(); camTween = null; }
-  });
-}
-
-function currentLook() {
-  const d = new THREE.Vector3();
-  camera.getWorldDirection(d);
-  return camera.position.clone().addScaledVector(d, 10);
 }

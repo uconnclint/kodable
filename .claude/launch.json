@@ -12,6 +12,12 @@
         "5199",
         "--strictPort"
       ],
+      "port": 5199,
+      "autoPort": false
+    },
+    {
+      "name": "blooptopia-attach",
+      "url": "http://localhost:5199",
       "port": 5199
     },
     {
