@@ -151,14 +151,28 @@ function heightField(kind, res, seed) {
       h[i] = Math.min(1, terraced + (rnd() > 0.9975 ? 0.7 : 0));
     }
   } else if (kind === 'strata') {
-    // Canyon: horizontal sediment bands, warped by the noise so they wobble
-    // like real bedding planes instead of ruling straight across the board.
+    // Canyon: sediment bands, warped by the noise so they wobble like real
+    // bedding planes instead of ruling straight across the board.
+    //
+    // One band at five cycles was three or four soft stripes per tile face,
+    // running dead flat along one axis at half the map's whole amplitude: at
+    // any size that is not rock, it is a horizontally-smeared image, and it
+    // read as a compression artefact. Two things fix it. A second, much finer
+    // course at seventeen cycles gives the surface a *grain* -- roughly eight
+    // bands per tile, which is small enough to read as texture rather than as
+    // stripes -- and both scales now wander with x as well as y, which halves
+    // how far a single value runs in a straight line. The coarse band also
+    // gives up a third of its amplitude to make room, so the strata sit under
+    // the surface instead of being the surface.
     for (let y = 0; y < res; y++) {
       for (let x = 0; x < res; x++) {
         const i = y * res + x;
         const warp = (h[i] - 0.5) * 2.2;
-        const band = Math.sin((y / res) * Math.PI * 2 * 5 + warp * 1.8) * 0.5 + 0.5;
-        h[i] = Math.min(1, band * 0.5 + h[i] * 0.32 + fine[i] * 0.18);
+        const v = (y / res) * Math.PI * 2;
+        const u = (x / res) * Math.PI * 2;
+        const band = Math.sin(v * 5 + warp * 1.8 + Math.sin(u) * 0.42) * 0.5 + 0.5;
+        const grain = Math.sin(v * 17 + warp * 3.4 + Math.sin(u * 2) * 0.75) * 0.5 + 0.5;
+        h[i] = Math.min(1, band * 0.34 + grain * 0.16 + h[i] * 0.30 + fine[i] * 0.20);
       }
     }
   } else if (kind === 'panel') {
@@ -185,7 +199,11 @@ function heightField(kind, res, seed) {
       for (let x = 0; x < res; x++) {
         const i = y * res + x;
         const streak = Math.sin(((x + y * 0.6) / res) * Math.PI * 2 * 3 + h[i] * 7) * 0.5 + 0.5;
-        h[i] = Math.min(1, Math.max(0, h[i] * 0.68 + streak * 0.10 + fine[i] * 0.22));
+        // A second, much tighter scour across the same diagonal: one at three
+        // cycles is a slow shading wobble, and what wet stone actually has is a
+        // grain fine enough to see the water sitting in it.
+        const grain = Math.sin(((x * 1.4 - y * 0.5) / res) * Math.PI * 2 * 11 + h[i] * 13) * 0.5 + 0.5;
+        h[i] = Math.min(1, Math.max(0, h[i] * 0.60 + streak * 0.10 + grain * 0.10 + fine[i] * 0.20));
       }
     }
   }
@@ -415,8 +433,11 @@ function buildEntry(themeKey, kind) {
   const rockHalf = rockField(half, seed);
 
   // Tech panels want almost no albedo mottle (a moulded plastic plate is
-  // uniform); grass and stone want a fair amount or they read as vinyl.
-  const topLo = kind === 'panel' ? 0.78 : 0.76;
+  // uniform); grass and stone want a fair amount or they read as vinyl. Wet
+  // slate wants more than either: it is the one surface in the game with no
+  // hue to carry it and no props scattered over it, so with a 24% band it read
+  // as a flat plastic tile whatever colour it was painted.
+  const topLo = kind === 'panel' ? 0.78 : (kind === 'slate' ? 0.66 : 0.76);
 
   return {
     top: {

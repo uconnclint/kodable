@@ -29,3 +29,35 @@ export function h(spec, props = {}, ...children) {
 
 const DIR_ARROWS = { U: '⬆️', D: '⬇️', L: '⬅️', R: '➡️' };
 export function dirArrow(d) { return DIR_ARROWS[d] || d; }
+
+// ---------------------------------------------------------------------------
+// Focus policy: is this focus worth drawing a ring around?
+//
+// `:focus-visible` answers that question natively, but it only reached Safari
+// in 15.4 and the device floor is iPadOS 15.0 — and an unrecognised
+// pseudo-class invalidates the *entire* selector list it appears in, so on
+// those iPads a rule gated on `:not(:focus-visible)` does not exist at all.
+// The stylesheet used to rely on exactly that to suppress the ring for touch,
+// which meant every tap on an old iPad left a violet ring stuck on the control
+// a child had just pressed.
+//
+// So the suppression hangs on a class instead. The document starts in the
+// quiet state and the first key that could move focus turns rings back on,
+// which matches what `:focus-visible` does and works on every engine we ship
+// to. The stylesheet still consults `:focus-visible` where it parses; this is
+// the layer that is always there.
+const focusRoot = document.documentElement;
+focusRoot.classList.add('pointer-focus');
+
+const usingPointer = () => focusRoot.classList.add('pointer-focus');
+// Modifier-only presses (a screenshot chord, say) are not navigation.
+const usingKeyboard = (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  focusRoot.classList.remove('pointer-focus');
+};
+
+// Capture phase, so a handler that stops propagation cannot desync the state.
+addEventListener('keydown', usingKeyboard, true);
+addEventListener('mousedown', usingPointer, true);
+addEventListener('pointerdown', usingPointer, true);
+addEventListener('touchstart', usingPointer, { capture: true, passive: true });

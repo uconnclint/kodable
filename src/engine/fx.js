@@ -58,7 +58,7 @@
 //   gravity  number          units/sec^2, positive = falls
 //   drag     number          per-second velocity damping
 //   spin     [min, max]      sprite rotation, rad/sec
-//   sprite   'blob' | 'star' | 'ring'
+//   sprite   'blob' | 'star' | 'ring' | 'flake'
 //   alpha    number          peak opacity
 //   soft     boolean         true = additive (glow), false = normal (confetti)
 //   radius   number          spawn jitter radius around pos
@@ -135,12 +135,23 @@ export function spring(stiffness, damping) {
 // ---------------------------------------------------------------------------
 // Procedural sprite atlas
 // ---------------------------------------------------------------------------
-// One RGB texture holding three masks, selected per particle in the shader by
-// a dot product with a channel mask. One texture, one material, three looks.
-//   R  soft blob  - bright core, wide halo. Glows, dust, confetti.
+// One RGBA texture holding four masks, selected per particle in the shader by
+// a dot product with a channel mask. One texture, one material, four looks.
+//   R  soft blob  - bright core, wide halo. Glows and dust.
 //   G  twinkle    - four-point star. Sparkles and the star pickup.
 //   B  soft ring  - a thin annulus. Pops and impact flecks.
+//   A  flake      - a hard-edged rounded rectangle. Confetti.
+//
+// The alpha channel used to be a constant 255 and confetti borrowed the blob,
+// which is why it read as dust: the blob is a radially symmetric gaussian whose
+// bright core is the inner quarter of its radius, so a 55-pixel point sprite
+// drew a ~15-pixel dot with a faint skirt -- blob analysis of the celebration's
+// peak frame gave a median on-screen width of four pixels. A symmetric mask also
+// throws the spin away, and spin is most of what makes confetti read as paper
+// rather than as glow. A flake with real corners fixes both.
 const SPRITE_SIZE = 128;
+
+const FLAKE_HW = 0.34, FLAKE_HH = 0.66, FLAKE_R = 0.16;
 
 function makeSpriteAtlas() {
   const S = SPRITE_SIZE;
@@ -165,11 +176,20 @@ function makeSpriteAtlas() {
       const rd = (r - 0.66) / 0.15;
       const ring = r > 1 ? 0 : Math.exp(-rd * rd) * Math.min(1, fall * 6);
 
+      // Rounded-rectangle signed distance, taller than it is wide so the flake
+      // has an orientation for the spin to show. The edge is two texels of ramp
+      // -- crisp, but not so crisp it aliases when the sprite is small.
+      const qx = Math.abs(nx) - (FLAKE_HW - FLAKE_R);
+      const qy = Math.abs(ny) - (FLAKE_HH - FLAKE_R);
+      const sd = Math.hypot(Math.max(qx, 0), Math.max(qy, 0))
+        + Math.min(Math.max(qx, qy), 0) - FLAKE_R;
+      const flake = 1 - Math.min(1, Math.max(0, (sd + 0.016) / 0.032));
+
       const i = (y * S + x) * 4;
       data[i] = Math.round(blob * 255);
       data[i + 1] = Math.round(star * 255);
       data[i + 2] = Math.round(ring * 255);
-      data[i + 3] = 255;
+      data[i + 3] = Math.round(flake * 255);
     }
   }
   const tex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
@@ -229,14 +249,15 @@ uniform float uPix;
 varying vec3 vColor;
 varying float vAlpha;
 varying float vRot;
-varying vec3 vMask;
+varying vec4 vMask;
 
 void main() {
   float u = page;
   vColor = mix(pcolor, pcolor2, u);
-  vMask = vec3(step(pshape, 0.5),
+  vMask = vec4(step(pshape, 0.5),
                step(0.5, pshape) * step(pshape, 1.5),
-               step(1.5, pshape));
+               step(1.5, pshape) * step(pshape, 2.5),
+               step(2.5, pshape));
   vRot = pspin;
 
   // Two alpha curves. 0 = ease-out fade (dust, confetti: present, then gone).
@@ -261,20 +282,20 @@ uniform sampler2D uMap;
 varying vec3 vColor;
 varying float vAlpha;
 varying float vRot;
-varying vec3 vMask;
+varying vec4 vMask;
 
 void main() {
   vec2 uv = gl_PointCoord - 0.5;
   float c = cos(vRot), s = sin(vRot);
   uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + 0.5;
-  float a = dot(texture2D(uMap, uv).rgb, vMask) * vAlpha;
+  float a = dot(texture2D(uMap, uv), vMask) * vAlpha;
   if (a < 0.004) discard;
   gl_FragColor = vec4(vColor, a);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
 
-const SHAPE_ID = { blob: 0, star: 1, ring: 2 };
+const SHAPE_ID = { blob: 0, star: 1, ring: 2, flake: 3 };
 
 function makePool(capacity, additive, atlas) {
   const geo = new THREE.BufferGeometry();
@@ -621,15 +642,31 @@ export function absorb(mesh, opts) {
 // Character trail
 // ---------------------------------------------------------------------------
 
-const TRAIL_PTS = 26;
+const TRAIL_PTS = 40;
 const TRAIL_LIFE = 0.42;   // seconds -- about three tiles at cruise
+// Distance between ribbon samples, in tiles. The ribbon used to take one sample
+// per *frame* (whenever the head had moved 0.04 tiles), so its vertex count was
+// a function of the frame rate: probed mid-roll in the headless harness it had
+// four vertices, two of which the shaping function below drove to zero width,
+// and the "ribbon" was a 0.42-tile sliver. Sampling by distance instead means a
+// struggling iPad and a 120Hz desktop lay down the same geometry -- and a
+// struggling iPad is exactly when a speed cue is worth having.
+const TRAIL_STEP = 0.10;
 // Peak half-width and opacity of the ribbon. The previous pass was 0.075/0.30
 // on top of a shaping factor that peaks at 0.73, which came to a four-
 // centimetre-wide additive smear at 0.16 alpha: it did not appear in a single
 // frame of a twenty-five shot review, mid-roll ones included. An effect nobody
 // can see is not restraint, it is a bug.
-const TRAIL_W = 0.22;
-const TRAIL_A = 0.75;
+const TRAIL_W = 0.20;
+const TRAIL_A = 0.85;
+// The two tapers, in *tiles* rather than in fractions of the sample count, so
+// the ribbon's shape does not change with its resolution. The head lead is
+// short (the ribbon should look like it is being thrown out of the ball) and
+// the tail fade is long (it should dissolve, not stop on a cut edge). Both are
+// clamped against the ribbon's own length so a short one still reaches full
+// width somewhere in the middle instead of being all taper.
+const TRAIL_LEAD = 0.14;
+const TRAIL_FADE = 0.55;
 // The ribbon is pinned to the ground plane rather than billboarded to the
 // camera. Billboarding a strip this wide swings it up through Bloop's face and
 // out into empty sky past the edge of the island, because a camera-facing quad
@@ -651,6 +688,7 @@ void main() {
 
 const TRAIL_FRAG = `
 uniform vec3 uColor;
+uniform vec3 uDark;
 varying float vA;
 varying float vV;
 void main() {
@@ -659,7 +697,12 @@ void main() {
   // as a painted stripe; the falloff is what makes it read as motion blur.
   float core = 1.0 - smoothstep(0.0, 0.45, abs(vV));
   float shape = pow(max(0.0, 1.0 - vV * vV), 1.6);
-  vec3 col = mix(uColor, vec3(1.0), core * 0.6);
+  // The character trail colours are pale by design (Blip's is #a6d8ff), which
+  // over a bright meadow or a #a8dbf0 sky is no separation at all. So the flanks
+  // run to a deepened version of the same hue -- the same trick preview.js uses
+  // to hold its ribbon's edge -- and only the centre line goes hot.
+  vec3 col = mix(uColor, vec3(1.0), core * 0.32);
+  col = mix(col, uDark, smoothstep(0.38, 1.0, abs(vV)));
   gl_FragColor = vec4(col, vA * shape);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -688,8 +731,10 @@ export function createTrail(color) {
   geo.setDrawRange(0, 0);
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
 
+  const base = new THREE.Color(color || 0xffffff);
+  const dark = base.clone().multiplyScalar(0.42);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(color || 0xffffff) } },
+    uniforms: { uColor: { value: base }, uDark: { value: dark } },
     vertexShader: TRAIL_VERT,
     fragmentShader: TRAIL_FRAG,
     transparent: true,
@@ -709,26 +754,51 @@ export function createTrail(color) {
   const dir = new THREE.Vector3();
   const side = new THREE.Vector3();
 
+  const _from = new THREE.Vector3();
+
   return {
     update(pos, dt) {
       for (let i = pts.length - 1; i >= 0; i--) {
         pts[i].age += dt;
         if (pts[i].age > TRAIL_LIFE) pts.splice(i, 1);
       }
+      // Sampled by distance, and subdivided when one frame covered more than a
+      // step. On a slow frame the head can jump a third of a tile, and pushing
+      // a single point for it is what left the ribbon with four vertices.
       const head = pts[pts.length - 1];
-      if (!head || head.p.distanceToSquared(pos) > 0.0016) {
+      if (!head) {
         pts.push({ p: pos.clone(), age: 0 });
-        if (pts.length > TRAIL_PTS) pts.shift();
       } else {
-        head.p.copy(pos);
+        const gap = head.p.distanceTo(pos);
+        if (gap > TRAIL_STEP) {
+          _from.copy(head.p);
+          const seg = Math.min(8, Math.ceil(gap / TRAIL_STEP));
+          for (let k = 1; k <= seg; k++) {
+            // Staggered ages, so a slow frame's worth of points expires from the
+            // tail one at a time rather than all together.
+            pts.push({ p: _from.clone().lerp(pos, k / seg), age: dt * (1 - k / seg) });
+          }
+        } else {
+          head.p.copy(pos);
+        }
       }
+      while (pts.length > TRAIL_PTS) pts.shift();
       if (pts.length < 2) { geo.setDrawRange(0, 0); return; }
 
       const n = pts.length;
+      // Cumulative arc length from the tail. Everything about the ribbon's shape
+      // is measured against this rather than against the vertex index, which is
+      // what makes it independent of how many samples happen to be in it.
+      let total = 0;
+      for (let i = 1; i < n; i++) total += pts[i].p.distanceTo(pts[i - 1].p);
+      const lead = Math.min(TRAIL_LEAD, total * 0.32);
+      const fade = Math.min(TRAIL_FADE, total * 0.60);
+      let run = 0;
       for (let i = 0; i < n; i++) {
         const cur = pts[i].p;
         const nxt = pts[Math.min(i + 1, n - 1)].p;
         const prv = pts[Math.max(i - 1, 0)].p;
+        if (i > 0) run += cur.distanceTo(prv);
         dir.subVectors(nxt, prv);
         dir.y = 0;
         if (dir.lengthSq() < 1e-9) dir.set(1, 0, 0);
@@ -737,12 +807,19 @@ export function createTrail(color) {
         side.set(-dir.z, 0, dir.x).normalize();
         // Widest just *behind* the head, pinched to nothing at both ends: the
         // ribbon appears to stream out of the ball rather than to wrap it, and
-        // the tail dissolves instead of ending on a cut edge.
-        const along = i / (n - 1);              // 0 = oldest, 1 = newest
+        // the tail dissolves instead of ending on a cut edge. Both tapers are
+        // fixed world distances, so the middle of any ribbon longer than
+        // lead + fade reaches full width.
+        const fromTail = fade > 1e-5 ? Math.min(1, run / fade) : 1;
+        const fromHead = lead > 1e-5 ? Math.min(1, (total - run) / lead) : 1;
         const decay = 1 - pts[i].age / TRAIL_LIFE;
-        const lens = Math.pow(along, 0.55) * (1 - Math.pow(along, 6));
+        const lens = ease.smoothstep(fromTail) * ease.smoothstep(fromHead);
         const w = TRAIL_W * lens * decay;
-        const a = TRAIL_A * lens * decay * decay;
+        // Alpha falls with the age *once*, not squared. Squared, the ribbon was
+        // effectively gone a sixth of a second after it was laid down, so only
+        // the few centimetres directly behind the ball ever had any value in
+        // them and the "trail" was a smudge rather than a streak.
+        const a = TRAIL_A * lens * decay;
         const o = i * 6;
         positions[o] = cur.x + side.x * w;
         positions[o + 1] = TRAIL_Y;
@@ -1019,8 +1096,18 @@ export function bump(pos, dir, power) {
 // never as a buzzer: this is a puzzle game for children and a wrong answer is
 // a normal, safe thing to have happen.
 export function fizzle(pos) {
-  const grey = new THREE.Color(0xbfc6d6);
-  const pale = new THREE.Color(0xe4e9f2);
+  // Darker than the ground it plays over, not lighter.
+  //
+  // These were 0xbfc6d6 and 0xe4e9f2 at peak opacities of 0.13-0.15 -- a pale
+  // cool grey, lighter than the grass, at an eighth of full. The whole effect
+  // was not findable in a 1.4x crop at four different settle times, which left
+  // the entire "your program did not work" signal resting on the character's
+  // pose. Air escaping from something soft is a *shadow* in the air, so the
+  // palette now sits below the board's value and the opacities are roughly
+  // trebled. It is still the quietest beat in the game -- a wrong answer is a
+  // normal thing to have happen -- but it is now a beat that exists.
+  const grey = new THREE.Color(0x6f7789);
+  const pale = new THREE.Color(0x99a1b4);
   // The air going out, not smoke going up. The first pass drifted fourteen
   // grey blobs *upward*, which is the shape of a fire, not of a deflation --
   // and it played over a character that is simultaneously sinking, so the two
@@ -1034,18 +1121,18 @@ export function fizzle(pos) {
     pos: new THREE.Vector3(pos.x, pos.y + 0.14, pos.z), count: 16, shape: 'ring',
     sprite: 'blob', soft: false, speed: [1.1, 2.3], size: [0.16, 0.34],
     life: [0.5, 0.9], colors: [grey, pale],
-    gravity: 1.1, drag: 3.6, alpha: 0.4, radius: 0.18, swirl: 0.7,
+    gravity: 1.1, drag: 3.6, alpha: 0.7, radius: 0.18, swirl: 0.7,
   });
   ring({
     pos: new THREE.Vector3(pos.x, 0.05, pos.z), color: grey,
-    from: 0.18, to: 0.85, life: 0.55, alpha: 0.22, soft: false,
+    from: 0.18, to: 0.85, life: 0.55, alpha: 0.50, soft: false,
   });
   later(0.22, () => {
     emit({
       pos: new THREE.Vector3(pos.x, pos.y + 0.10, pos.z), count: 9, shape: 'ring',
       sprite: 'blob', soft: false, speed: [0.6, 1.4], size: [0.13, 0.26],
       life: [0.45, 0.8], colors: [pale], gravity: 0.9, drag: 4.0,
-      alpha: 0.3, radius: 0.14,
+      alpha: 0.55, radius: 0.14,
     });
   });
 }
@@ -1106,14 +1193,17 @@ export function celebrate(pos, magnitude, color) {
   });
 
   // Wave 1 -- confetti. Solid, not additive: it has to read as *stuff* falling
-  // through the frame, and additive confetti just makes a bright smear. Sized
-  // to be seen from this camera -- the previous 0.13-unit pieces came to about
-  // four screen pixels and read as dust.
+  // through the frame, and additive confetti just makes a bright smear. It uses
+  // the flake mask rather than the blob, which is the difference between paper
+  // and dust: the blob has no edges to spin and no edges to measure, and a
+  // 55-pixel blob sprite draws a 15-pixel dot. Speed is roughly halved with it,
+  // because the old [2.6, 7.8] threw most of the pieces three or four tiles
+  // clear of the island before they had fallen far enough to be seen.
   later(0.13, () => {
     emit({
       pos: mid, count: Math.round(40 * boost), floor: Math.round(28 * boost),
-      shape: 'dome', sprite: 'blob', soft: false,
-      speed: [2.6, 5.4 * boost], size: [0.30, 0.22], life: [0.9, 1.5],
+      shape: 'dome', sprite: 'flake', soft: false,
+      speed: [1.8, 3.6], size: [0.28, 0.22], life: [0.9, 1.5],
       colors: [GOLD, GOLD_HOT, chr, CREAM, CONFETTI_PINK, CONFETTI_CYAN],
       gravity: 6.5, drag: 0.9, alpha: 0.95, spin: [-12, 12], radius: 0.24,
     });
@@ -1140,8 +1230,8 @@ export function celebrate(pos, magnitude, color) {
       ring({ pos: ground, color: GOLD, from: 0.35, to: 1.15 * boost, life: 0.8, alpha: 0.55, soft: false });
       emit({
         pos: mid, count: Math.round(26 * boost), floor: 20,
-        shape: 'dome', sprite: 'blob', soft: false,
-        speed: [2.2, 4.6 * boost], size: [0.28, 0.20], life: [0.9, 1.5],
+        shape: 'dome', sprite: 'flake', soft: false,
+        speed: [1.6, 3.2], size: [0.26, 0.20], life: [0.9, 1.5],
         colors: [GOLD, GOLD_HOT, CREAM, CONFETTI_PINK],
         gravity: 6.0, drag: 0.9, alpha: 0.95, spin: [-12, 12], radius: 0.3,
       });

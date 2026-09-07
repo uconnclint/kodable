@@ -376,7 +376,19 @@ export function playRun(bloop, level, result, { onCommand, onDone, trailColor })
     after(0.09, () => recoil.kick(-5.2));
     after(0.20, () => recoil.kick(3.6));
     after(0.32, () => recoil.kick(-1.8));
-    finish(900);
+    // ...and then breathe back in. Nothing used to clear these, so the deflate
+    // and the droop were *permanent*: the character sat squashed to sy 0.835,
+    // nose down, for as long as the level was open, and because finish() tore
+    // the frame updater down without restoring the rest pose he was also
+    // completely static -- no breath, no sway, until the board was rebuilt.
+    // A wrong answer is a normal thing to have happen in a puzzle game, and the
+    // character has to visibly get back up from it.
+    after(0.95, () => { deflate = 0; droop = 0; sq.kick(-3); });
+    // Late enough that the re-inflate lands before the result is reported (and
+    // before main.js hands the character back to the idle animation), so the
+    // recovery is a beat the child actually sees rather than a state change
+    // that happens under the dialog.
+    finish(1450);
   }
 
   function finish(delay) {
@@ -386,7 +398,17 @@ export function playRun(bloop, level, result, { onCommand, onDone, trailColor })
     // the springs and the trail are all still ringing down when the result is
     // reported -- but it must not outlive them, or every completed run would
     // leave another copy of it driving the bloop behind the results dialog.
-    setTimeout(() => { if (!cancelled && stop) { stop(); stop = null; } }, delay + 1400);
+    //
+    // Whatever pose the last frame left behind is handed back to rest here.
+    // Without this the run's final scale and face lag simply froze on screen
+    // the moment the updater went away, which is how a failed run left a
+    // permanently squashed, permanently drooping character on the board.
+    setTimeout(() => {
+      if (cancelled || !stop) return;
+      bloop.scale.set(1, 1, 1);
+      if (face) { face.rotation.set(0, 0, 0); face.scale.set(1, 1, 1); }
+      stop(); stop = null;
+    }, delay + 1400);
   }
 
   // --- frame -----------------------------------------------------------------

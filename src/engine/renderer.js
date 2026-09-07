@@ -58,14 +58,32 @@ export const WORLD_THEMES = {
     // pale orange tile were nearly the same value, and tone mapping narrowed
     // the gap further. Dropping the tile a stop made the collectables read --
     // and dropped it straight into the backdrop, which was a pale orange of
-    // almost exactly the same luminance. Board against sky measured 1.06:1:
-    // only a hue shift separated the playfield from the air around it. The
-    // second half of the fix is therefore in the sky, not the tile. `ground`
-    // (most of the frame, since the camera looks down) goes to a deep canyon
-    // shade and `horizon` loses its milkiness, while `bounce` stays warm so the
-    // ambient coming back up onto the island does not go cold with them.
+    // almost exactly the same luminance.
+    //
+    // Two rounds of fixing that in the sky produced the opposite failure. With
+    // `zenith 0xef7a2e`, `horizon 0xf2b177`, `ground 0x6d3524` and the tile at
+    // 0xdb8843, the whole frame sat inside a thirty-degree hue arc: 78% of the
+    // image was one orange-brown family with no tonal structure at all, and the
+    // board *still* only measured 2.1:1 against the air behind it.
+    //
+    // So the sky is given a run instead of a wash: warm at the horizon, cool
+    // violet in the depth the camera is looking down into. That is what canyon
+    // shadow does under a warm sun, and it buys hue contrast and value contrast
+    // in the same move -- the board now reads better than 3:1 against the air
+    // behind it and sits on a complementary hue instead of inside its own.
+    //
+    // `horizon` is the load-bearing value here and it is deliberately *not* the
+    // obvious pale cream. The dome mixes horizon into ground in linear light,
+    // and a near-white horizon is 1.0 in linear red: at the 12% the mix gives it
+    // in the middle of the frame it still contributed five times the ground's
+    // own red and washed the entire lower sky back to brown, however cool the
+    // ground colour was. A burnt orange carries the same warmth at a quarter of
+    // the linear magnitude, so the shadow underneath it survives.
+    //
+    // `bounce` stays warm, so the light coming back up onto the island does not
+    // go cold with the sky and the rock still belongs to its world.
     sky: 0xffc98a, fog: 0xffe0bb, grass: 0xdb8843, dirt: 0xa1522a, deco: 'canyon',
-    zenith: 0xef7a2e, horizon: 0xf2b177, ground: 0x6d3524, bounce: 0xb0663a,
+    zenith: 0xc2582a, horizon: 0xb3603a, ground: 0x33203f, bounce: 0xb0663a,
     cloud: 0xfff0dc, clouds: true,
     sun: 0xfff0cf, sunDir: [0.55, 0.9, 0.45], sunGlow: 0.6, skyFalloff: 0.85,
     key: 0xffe7bd, keyIntensity: 1.95, fill: 0xffd2a6, fillIntensity: 0.36,
@@ -73,8 +91,22 @@ export const WORLD_THEMES = {
   },
   // Tech: clean, cool, slightly clinical daylight.
   4: {
-    sky: 0xa8ccff, fog: 0xd2e8ff, grass: 0x6fa8ff, dirt: 0x3e5a8a, deco: 'tech',
-    zenith: 0x2560c8, horizon: 0xdaefff, ground: 0x74a8e4, bounce: 0x5b81b8,
+    // World 3's board-against-sky problem, in a world that never got the fix:
+    // `grass 0x6fa8ff` (111,168,255) was being played against `ground 0x74a8e4`
+    // (116,168,228). Measured, the tile tops came out at 1.18:1 against the air
+    // directly behind them at a colour difference of dE 22 -- a blue board on a
+    // blue sky, with only the tile groove telling a child where the floor ends.
+    //
+    // The board goes up and the air goes down, and the air also goes green:
+    // matching the tile's value from directly below it was only half the
+    // problem, the other half was that both were the same cornflower. A deep
+    // sea-teal below the horizon is still unmistakably a cool clinical daylight
+    // world, and it gives the plates something to sit *on*. `horizon` loses the
+    // near-white milkiness that was pulling the top of the frame towards paper.
+    // `bounce` is untouched, so the cool ambient coming back up onto the plates
+    // is exactly as it was.
+    sky: 0xa8ccff, fog: 0xd2e8ff, grass: 0x7ab4ff, dirt: 0x3e5a8a, deco: 'tech',
+    zenith: 0x2560c8, horizon: 0xa8cdf0, ground: 0x22465d, bounce: 0x5b81b8,
     cloud: 0xf2faff, clouds: true,
     sun: 0xffffff, sunDir: [0.38, 1.0, 0.46], sunGlow: 0.4, skyFalloff: 0.65,
     key: 0xffffff, keyIntensity: 1.95, fill: 0xc2ddff, fillIntensity: 0.40,
@@ -82,12 +114,24 @@ export const WORLD_THEMES = {
   },
   // Storm: overcast, low contrast, one warm break in the cloud for the rim.
   5: {
-    sky: 0x3a2f4a, fog: 0x5f5177, grass: 0x9aa7b8, dirt: 0x5a6270, deco: 'storm',
+    // `grass` was 0x9aa7b8 -- a desaturated blue-grey, which is to say grey.
+    // Under a violet sky that reads as untextured plastic rather than as wet
+    // slate, and it left the storm world the only board in the game with no
+    // hue of its own. Pushed off neutral towards the sky it lives under, it is
+    // still unmistakably stone and it now belongs to the world around it.
+    sky: 0x3a2f4a, fog: 0x5f5177, grass: 0x9dadd6, dirt: 0x5a6270, deco: 'storm',
     zenith: 0x1d1729, horizon: 0x7f6b95, ground: 0x342b42, bounce: 0x4e4459,
     cloud: 0x9b90ad, clouds: true,
     sun: 0xffd7c0, sunDir: [0.5, 0.85, 0.42], sunGlow: 0.35, skyFalloff: 0.6,
     key: 0xe6e9ff, keyIntensity: 2.0, fill: 0x9a8cc0, fillIntensity: 0.40,
-    rim: 0xff9a70, rimIntensity: 1.45, exposure: 1.1, envIntensity: 0.8,
+    // The most saturated and most intense rim in the game, on the coolest and
+    // least contrasty board in the game: at 0xff9a70 / 1.45 it drew a salmon
+    // hairline along every tile chamfer, which at any zoom fought the groove
+    // the grid depends on and read as light coming from nowhere. Softened to a
+    // pale warm and dropped below every other world's rim, it does the one job
+    // a rim has here -- lifting the island's edge off the sky -- and stops
+    // drawing an outline round each tile.
+    rim: 0xffb79a, rimIntensity: 0.95, exposure: 1.1, envIntensity: 0.8,
   },
 };
 
@@ -123,13 +167,41 @@ const DEFAULT_Y_HI = 0.78;
 // Bloop hid behind "Bloops" and the exit portal behind the subtitle, so the
 // board read as a texture the panel was printed on rather than as a place the
 // panel is floating in front of.
-const ALIGN_X = { play: 0.5, backdrop: 0.7, hero: 0.5 };
+//
+// 0.7 with a 1.8 zoom was not far enough: the two moves fought each other, and
+// the overscaled island simply grew back under the right half of the stack, so
+// PLAY, Badges and the last three letters of the wordmark all landed on green
+// tiles and Bloop went behind the Bloops/Awards row. The island is pushed
+// further right and no longer overscaled past the point where it reaches back
+// under the buttons. The menu column is separately gaining padding on its
+// right, so the two changes open the same gap from opposite sides -- which is
+// why this stops at 0.82 rather than pushing the island off the edge.
+const ALIGN_X = { play: 0.5, backdrop: 0.82, hero: 0.5 };
 // Extra scale, for the other half of the same problem: fitted to the band, the
 // menu island was a chip in the middle of an otherwise empty purple frame.
 // Overscaling it -- and letting the frame crop it, as a backdrop should be
 // cropped -- is what turns it from an object on the screen into somewhere the
-// screen is looking.
-const ZOOM = { play: 1, backdrop: 1.8, hero: 1 };
+// screen is looking. 1.45 is as far as that goes before the island's left edge
+// reaches back under the button stack.
+const ZOOM = { play: 1, backdrop: 1.45, hero: 1 };
+// The smallest a world unit is allowed to be on screen, in CSS pixels at a
+// 1000px-tall canvas, and the camera distance that produces it.
+//
+// `solveFraming` fits the board to the usable band, which sounds right and is
+// wrong across a course: the band is about 2.5:1 while every board except the
+// 6x1 tutorials is roughly square, so almost all of them are height-limited and
+// tile size falls as 1/rows. Measured, one tile was 231 CSS px across in W1-01
+// and 61 in W5-08 -- a 3.8x swing in the size of the single most important
+// object in the game, which is why a child moving between levels has to re-read
+// the board every time. Swift Playgrounds never changes its world scale.
+//
+// So the fit is allowed to pull the camera *back* and never to push it in: tall
+// boards are untouched (they are already further away than this), and short
+// ones stop being blown up to fill a frame they do not have the content for.
+// Deriving the distance from the fov rather than hard-coding it keeps the two
+// in step: half the canvas height subtends tan(BASE_FOV/2) at distance 1.
+const MIN_TILE_PX = 100;
+const REF_DIST = 1000 / (2 * MIN_TILE_PX * Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2));
 
 let renderer, scene, camera, sky, env, rig, post;
 let theme = WORLD_THEMES[1];
@@ -210,11 +282,18 @@ export function initRenderer() {
   onQualityChange(onTierChange);
 
   window.addEventListener('resize', resize);
+  // Sized, then composed, then sized again -- deliberately, and in that order.
+  // The composer reads the renderer's drawing-buffer size and pixel ratio in
+  // its constructor, so it has to be built after the first resize or it is born
+  // at the canvas's 300x150 default. But it also has to *see* a resize, or it
+  // never gets the sizing pass every other consumer gets and stays whatever its
+  // constructor guessed. Building it after one resize and before another is the
+  // only ordering where both are true, and it costs one extra framing solve at
+  // boot. `post` stays null if the target could not be allocated (see postfx),
+  // and tick() then draws straight to the canvas.
   resize();
-  if (flags().postFX) {
-    post = createComposer(renderer, scene, camera);
-    post.setSize(innerWidth, innerHeight);
-  }
+  if (flags().postFX) post = createComposer(renderer, scene, camera);
+  resize();
   renderer.setAnimationLoop(tick);
   console.info(`[render] tier=${tier()} gpu=${caps().gpu} dpr=${renderer.getPixelRatio().toFixed(2)}`);
   return { scene, camera, renderer };
@@ -226,7 +305,7 @@ function onTierChange() {
   rig.applyShadowQuality();
   rig.fit(framing.center, framing.spanX, framing.spanZ);
   if (post) { post.dispose(); post = null; }
-  if (f.postFX) post = createComposer(renderer, scene, camera);
+  if (f.postFX) post = createComposer(renderer, scene, camera); // may return null
   applyTheme(themeKey);
   resize();
 }
@@ -374,10 +453,12 @@ function solveFraming() {
   _probe.clearViewOffset();
   _probe.updateProjectionMatrix();
 
-  let dist = Math.max(spanX, spanZ, 4) + 6;
+  // Projects the eight corners of the framed box from `dist` and returns how
+  // far over the available band the result is. Shared by the solver loop and by
+  // the final re-measure, so `solved.cx`/`cy` always describe the distance the
+  // camera actually ends up at.
   let minX = 0, maxX = 0, minY = 0, maxY = 0;
-
-  for (let pass = 0; pass < 6; pass++) {
+  const measure = (dist) => {
     _probe.position.copy(center).addScaledVector(VIEW_DIR, dist);
     _probe.lookAt(center);
     _probe.updateMatrixWorld(true);
@@ -393,12 +474,24 @@ function solveFraming() {
       if (_corner.y < minY) minY = _corner.y;
       if (_corner.y > maxY) maxY = _corner.y;
     }
-    const over = Math.max(
-      (maxX - minX) / 2 / availX,
-      (maxY - minY) / 2 / availY,
-    ) / zoom;
+    return Math.max((maxX - minX) / 2 / availX, (maxY - minY) / 2 / availY) / zoom;
+  };
+
+  let dist = Math.max(spanX, spanZ, 4) + 6;
+  for (let pass = 0; pass < 6; pass++) {
+    const over = measure(dist);
     dist = THREE.MathUtils.clamp(dist * over, 5, 160);
     if (Math.abs(over - 1) < 0.004) break;
+  }
+
+  // Upward only, and only where the board is the subject. The menu backdrop is
+  // deliberately overscaled and cropped, so a floor on its tile size would undo
+  // the thing that turns it from an object into a place. Re-measured after the
+  // clamp: the bounds centre moves with the distance, and applyProjection aims
+  // the lens shift at that centre, so a stale one puts the board off-frame.
+  if (screenMode() === 'play') {
+    const floored = Math.max(dist, REF_DIST * 0.92);
+    if (floored !== dist) { dist = floored; measure(dist); }
   }
 
   solved.dist = dist;
@@ -523,6 +616,15 @@ function tick() {
 
   if (post) post.render(dt);
   else renderer.render(scene, camera);
+}
+
+// The part of the canvas the HUD is not sitting on, as NDC y (+1 top, -1
+// bottom). scenery.js uses it to keep its decorative islands from running down
+// behind the program tray and out the other side of it, which reads as a
+// rendering fault rather than as land.
+export function usableBandNDC() {
+  const h = innerHeight || 1;
+  return { top: 1 - 2 * bandTop / h, bottom: 1 - 2 * bandBottom / h };
 }
 
 export function onFrame(fn) { updaters.add(fn); return () => updaters.delete(fn); }

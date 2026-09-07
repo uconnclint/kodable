@@ -69,7 +69,9 @@ export function icon(name, cls = '') {
 
 // A coin counter pill: [coin art] N
 export function coinPill(n, cls = '') {
-  return h('div.coin-pill' + cls, { role: 'status', 'aria-label': `${n} coins` }, icon('coin'), ` ${n}`);
+  // No literal space: the pill is a flex row with a gap, and a space between
+  // the glyph and the number becomes a second, unequal gutter on top of it.
+  return h('div.coin-pill' + cls, { role: 'status', 'aria-label': `${n} coins` }, icon('coin'), String(n));
 }
 
 // A row of `total` stars, `filled` of them lit. `cls` for extra sizing context.

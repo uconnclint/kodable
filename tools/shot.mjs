@@ -161,9 +161,13 @@ const chrome = spawn(CHROME, [
   '--disable-extensions',
   // Software GL is the reliable path for headless WebGL2 on macOS; the scene
   // is a handful of thousand triangles, so stills render fine without a GPU.
-  '--use-gl=angle',
-  '--use-angle=swiftshader',
-  '--enable-unsafe-swiftshader',
+  // --gpu swaps in the real Metal-backed driver, which matters because
+  // SwiftShader is detected as a software GPU and therefore always selects the
+  // `low` quality tier -- the medium/high tiers can only be exercised on
+  // hardware, or by forcing the tier with ?q=.
+  ...(args.gpu
+    ? ['--use-gl=angle', '--use-angle=metal', '--enable-gpu']
+    : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']),
   'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 

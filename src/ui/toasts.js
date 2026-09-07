@@ -14,7 +14,11 @@ export function toast({ icon, kind, title, sub }) {
 export function toastUnlocks(unlocks) {
   for (const u of unlocks) {
     toast({
-      icon: u.kind === 'badge' ? uiIcon('badge') : uiIcon(`medal-${u.item.tier}`),
+      // The award's own glyph, the same one the wall shows. A generic medal
+      // here and a bowling ball on the achievements screen are two different
+      // pictures of one thing, and the toast is where a child first meets it.
+      icon: u.item.icon ? h('span.t-glyph', { 'aria-hidden': 'true' }, u.item.icon)
+        : (u.kind === 'badge' ? uiIcon('badge') : uiIcon(`medal-${u.item.tier}`)),
       kind: u.kind === 'badge' ? 'Badge earned!' : 'Achievement!',
       title: u.item.name,
       sub: u.kind === 'achievement' ? h('span', {}, `+${u.item.coins} `, uiIcon('coin')) : u.item.desc,

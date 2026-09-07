@@ -177,13 +177,41 @@ export function displayBodyColor(char) {
 const ACCENT_PUSH = 0.34;
 const ACCENT_HUE = -0.125;
 
+// The mud band. Rotating a *green* accent anticlockwise walks it green ->
+// yellow -> orange, and since a green accent nearly always sits on a light
+// green body the value push then drives it dark -- and a dark saturated orange
+// is brown. Zapp's lime crest came out as a single brown horn on a lime ball,
+// which is the one colour a neon speedster cannot be. So a source hue inside the
+// green band that would land below 40 degrees rotates the *other* way instead:
+// it still leaves the body's hue by 45 degrees, it just leaves towards the cool
+// neighbour rather than through the mud. Nothing else on the roster reaches this
+// branch -- Minty (168) and Mossy (145) both land comfortably above the floor,
+// and Sunny's 44-degree accent is outside the band so it keeps its red cap.
+const GREEN_LO = 60 / 360, GREEN_HI = 180 / 360, MUD_FLOOR = 40 / 360;
+// The candy band. A red accent rotated anticlockwise lands in magenta, which is
+// fine while it is being pushed *down* (Rosie's plum bow, Coral's magenta horns)
+// and disastrous while it is being pushed up: Emberling's deep crimson came out
+// as a saturated pale pink, so the "smoldering crimson daredevil with fiery
+// horns" was a red ball wearing bunny ears. Lifted, a red goes the warm way
+// instead -- through orange, which is where a fiery horn was always meant to
+// be, and which is the "warmer neighbour" this rotation claims to move towards
+// in the first place.
+const RED_LO = 330 / 360, RED_HI = 20 / 360;
+
+function accentHueShift(accent, lifting) {
+  const h = ((accent.getHSL(_hsl, THREE.SRGBColorSpace), _hsl.h) + 1) % 1;
+  if (lifting && (h >= RED_LO || h <= RED_HI)) return -ACCENT_HUE;
+  if (h < GREEN_LO || h > GREEN_HI) return ACCENT_HUE;
+  return (h + ACCENT_HUE) < MUD_FLOOR ? -ACCENT_HUE : ACCENT_HUE;
+}
+
 function contrastAccent(accent, body) {
   const la = lightness(accent);
   const lb = lightness(body);
   const want = THREE.MathUtils.clamp(
     lb < 0.5 ? Math.max(la, lb + ACCENT_PUSH) : Math.min(la, lb - ACCENT_PUSH), 0.12, 0.88,
   );
-  return shift(accent, ACCENT_HUE, 0.10, want - la);
+  return shift(accent, accentHueShift(accent, want > la + 0.02), 0.10, want - la);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +226,20 @@ const get = (key, make) => {
 };
 
 const unitSphere = (w = 20, h = 14) => get(`sph${w}x${h}`, () => new THREE.SphereGeometry(1, w, h));
+// The eyeball, with its shading baked into vertex colours because its material
+// is unlit (see `shared.sclera`). A plain top-to-bottom ramp: the brow shades
+// the top of a real eye and bounce light comes back up into the bottom of it.
+const scleraGeometry = () => get('sclera', () => {
+  const g = new THREE.SphereGeometry(1, 20, 14);
+  const pos = g.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const k = 1 - 0.22 * smooth((pos.getY(i) + 0.35) / 1.35);
+    col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+});
 const unitCone = (seg = 10) => get(`cone${seg}`, () => new THREE.ConeGeometry(1, 1, seg));
 const unitCyl = (seg = 12) => get(`cyl${seg}`, () => new THREE.CylinderGeometry(1, 1, 1, seg));
 const unitBox = () => get('box', () => new THREE.BoxGeometry(1, 1, 1));
@@ -222,7 +264,14 @@ const LOBE_FLOOR = 0.7947;
 
 function bodyGeometry() {
   return get('body', () => {
-    let g = new THREE.IcosahedronGeometry(1, 3);
+    // Detail 4, not 3. The shop's hero preview draws the character at ~420
+    // device pixels across, and at that size a 1280-face icosphere shows its
+    // facets along the silhouette -- the one place a soft toy must not have
+    // straight edges. 5120 faces (2562 welded vertices) is still a rounding
+    // error next to a board's worth of tiles, it is built once and shared by
+    // every character, and it also gives the grazing rim a smoother gradient at
+    // gameplay scale.
+    let g = new THREE.IcosahedronGeometry(1, 4);
     // The uv seam and the per-face normals both stop mergeVertices from
     // welding the duplicates, and an unwelded sphere shades with a visible
     // crack down one side. Nothing here samples a texture, so drop both and
@@ -523,23 +572,100 @@ function addContactShadow(root) {
 // ---------------------------------------------------------------------------
 const palettes = new Map();
 
-// Sheen is what makes the body read as a soft toy instead of a plastic ball:
-// a wide, low-gloss lobe that lights the grazing edge and separates Bloop from
-// whatever is behind him. It costs a heavier shader, so the bottom tier gets a
-// plain standard material instead. The tier is read once, when the palette is
-// built; a watchdog downgrade mid-session leaves already-built bloops alone
-// rather than dropping a frame rebuilding shaders at the worst possible moment.
+// A fixed fraction of the hero's own hue and value, emitted rather than
+// reflected. Every colour on the character is otherwise a product of the
+// world's key light, and three of the five worlds have a strongly tinted key:
+// World 3's warm sun dragged Blip 208 -> 181 degrees and collapsed his
+// saturation to 0.10, and World 4's sky-blue key left him at 1.03:1 against the
+// tile he was standing on. SAT_FLOOR clamps the *albedo*, which cannot help --
+// albedo is what the key light multiplies. This term is added after the light,
+// so it is the one part of the character no world can wash out.
+//
+// A third of a stop down in lightness and a touch up in chroma, floored so the
+// darkest bloop on the roster (Shadowpaw, at the bottom of bodySafe's band)
+// still gets a self-tint rather than an emissive of pure black.
+function selfLight(body) {
+  const c = body.clone();
+  c.getHSL(_hsl, THREE.SRGBColorSpace);
+  return c.setHSL(
+    _hsl.h,
+    Math.min(1, _hsl.s + 0.25),
+    Math.max(0.12, _hsl.l - 0.38),
+    THREE.SRGBColorSpace,
+  );
+}
+
+// Sheen is what makes the body read as a soft toy instead of a plastic ball: a
+// wide, low-gloss lobe scattering the body's own colour across the form. It
+// used to be skipped on the low tier to save a heavier shader, which meant a
+// third of the character's surface quality did not exist on the tier every
+// cheap tablet -- and every review screenshot -- actually runs. One physical
+// material on one object of a few thousand triangles is not the thing that
+// costs an iPad its frame, so it is now built on every tier.
+//
+// The silhouette edge, deepened.
+//
+// Measured three ways on the World 4 board -- body only, body + sheen, and both
+// -- the sheen turned out to be *costing* the character its separation, not
+// providing it. A sheen lobe is energy added at grazing angles, so it lifts the
+// last few degrees of the ball towards white; against World 4's pale blue sky
+// and its pale blue tiles that walked the edge from 1.10:1 (diffuse alone) to
+// 1.01:1. A light rim only separates against a dark background, and three of
+// the five worlds are bright.
+//
+// So the rim goes the other way. The last ~20 degrees of the sphere are
+// multiplied down, which is the "ink line without an ink line" this whole art
+// style runs on: it separates against a light background by value, it separates
+// against a dark one because the body inside it is far lighter than the
+// backdrop anyway, and it models the ball's turn away from the camera instead
+// of flattening it. The sheen keeps its job -- the soft-toy wrap across the
+// form -- and stops trying to do the silhouette's.
+//
+// The contour carries hue as well as value. A neutral multiply darkens the edge
+// against a pale sky but leaves it the same blue; leaning the darkening towards
+// the body's own complement makes the contour a different *colour* too, which
+// is what still reads when a world happens to be built out of the hero's own
+// hue -- World 4's tiles, sky and default character are all the same blue. The
+// complement is taken in the shader by reflecting the albedo through its own
+// mean, so it costs one dot product and needs no per-character uniform: the
+// shader source is identical for all sixteen palettes, the cache key is
+// constant, and nothing else in the scene can accidentally pick it up.
+const RIM_POW = 2.2;     // how tightly the contour hugs the edge
+
+const RIM_GLSL = `
+  // geometryNormal / geometryViewDir come from <lights_fragment_begin>, so this
+  // has to sit after it -- which <opaque_fragment> guarantees.
+  float bloopRim = pow(1.0 - saturate(dot(geometryNormal, geometryViewDir)), ${RIM_POW.toFixed(2)});
+  vec3 bloopComp = clamp(vec3(2.0 * dot(diffuseColor.rgb, vec3(0.3333))) - diffuseColor.rgb, 0.0, 1.0);
+  vec3 bloopRimMul = mix(vec3(0.55), bloopComp * 0.9 + 0.25, 0.55);
+  outgoingLight *= mix(vec3(1.0), bloopRimMul, bloopRim);
+`;
+
 function bodyMaterial(color, sheenColor, sheenAmount) {
-  const common = {
+  const mat = new THREE.MeshPhysicalMaterial({
     color, vertexColors: true, roughness: 0.58, metalness: 0.0,
-  };
-  if (tier() === 'low') return new THREE.MeshStandardMaterial(common);
-  return new THREE.MeshPhysicalMaterial({
-    ...common,
     sheen: sheenAmount,
-    sheenRoughness: 0.7,
+    // Broad on purpose. A tight sheen lobe piles its energy into the grazing
+    // band, which is exactly where the rim above needs the value to fall; wide,
+    // it becomes the soft wrap over the whole visible face of the ball that
+    // makes it read as felt rather than as moulded plastic.
+    sheenRoughness: 0.90,
     sheenColor,
+    emissive: selfLight(color),
+    // Enough to hold the hue and chroma against a strongly tinted key without
+    // filling the shading in. It is deliberately a *chroma* term rather than a
+    // brightness one -- more saturated and darker than the body, so it adds
+    // colour without adding much luminance; at 0.22 with a near-body colour it
+    // lifted the mid tones by 22/255 and cost a third of the modelling range.
+    emissiveIntensity: 0.30,
   });
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <opaque_fragment>', `${RIM_GLSL}\n\t#include <opaque_fragment>`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'bloopBody';
+  return mat;
 }
 
 function paletteFor(char) {
@@ -556,15 +682,29 @@ function paletteFor(char) {
   // and walks it towards the bloom threshold -- so it goes the other way.
   const lensColor = shift(body, 0, -0.10, bl <= 0.66 ? 0.11 : -0.09);
 
-  // The rim is the character's half of "the hero must separate from the
-  // background". A same-hue sheen brightens a blue bloop against a blue sky by
-  // making it a slightly lighter blue, which is no separation at all; a rim in
-  // the body's complement is a different colour at the edge and reads even
-  // when the value behind it matches. Kept low in chroma so it is a light
-  // wrap, not a neon outline. Dark bloops need it badly, pale ones less --
-  // on a cream body a strong sheen just washes the shading out.
-  const sheenColor = shift(body, 0.5, -0.55, 0.34);
-  const sheenAmount = THREE.MathUtils.lerp(1.0, 0.55, THREE.MathUtils.clamp((bl - 0.3) / 0.45, 0, 1));
+  // The sheen is the soft-toy cue: a wide, low-gloss wrap that says the surface
+  // is felt rather than moulded. Dark bloops carry more of it than pale ones,
+  // because on a cream body a strong sheen just washes the shading out.
+  //
+  // Emphatically *not* the body's complement, which is what it used to be
+  // (`shift(body, 0.5, ...)`, in practice clipping to plain white on any bloop
+  // lighter than 0.66). Measured on the World 3 board, a complement sheen took
+  // Blip's saturation from 0.38 down to 0.11 and his forehead to a near-neutral
+  // (207, 211, 216): adding the opposite hue to a surface is the definition of
+  // desaturating it, and "the hero must not go grey" is the one thing this part
+  // of the character was for. A real fuzzy surface scatters its *own* colour at
+  // grazing angles, so that is what this is -- a pale wash of the body's hue.
+  // The silhouette separation is the rim's job (see bodyMaterial), not the
+  // sheen's, and the two were fighting.
+  body.getHSL(_hsl, THREE.SRGBColorSpace);
+  const sheenColor = new THREE.Color().setHSL(
+    _hsl.h, 0.34, 0.82, THREE.SRGBColorSpace,
+  );
+  // Halved from the previous pass. Measured against the World 4 board, the old
+  // amount lifted the ball's lit side from 9/255 *below* the sky to 3/255 above
+  // it: the wrap was so strong it erased the one value difference the character
+  // still had. It is a soft-toy cue, not a light source.
+  const sheenAmount = THREE.MathUtils.lerp(0.36, 0.18, THREE.MathUtils.clamp((bl - 0.3) / 0.45, 0, 1));
   const bodyMat = bodyMaterial(body, sheenColor, sheenAmount);
 
   const p = {
@@ -588,6 +728,17 @@ function paletteFor(char) {
     // The cap's top button: lifted off the accent so it does not vanish into
     // the dome it sits on.
     button: new THREE.MeshStandardMaterial({ color: shift(accent, 0, -0.1, 0.16), roughness: 0.5 }),
+    // The ink the *drawn* features are made of -- the mouth, the closed-eye
+    // arcs, the lashes, the scowl. These sit directly on the body, so on a dark
+    // bloop dark ink is invisible: bodySafe floors Shadowpaw's navy at L 0.34
+    // and the shared ink is L 0.15, which drew the winking eye and the mouth of
+    // the 1100-coin flagship with a nineteen-hundredths lightness delta. Below
+    // the halfway mark of bodySafe's band the ink inverts to a warm off-white,
+    // which is how every dark cartoon character has ever been drawn. (Pupils
+    // are *not* this: they sit on the pale sclera and must stay dark.)
+    faceInk: bl < 0.42
+      ? new THREE.MeshStandardMaterial({ color: 0xf0e6d8, roughness: 0.5 })
+      : sharedMaterials().ink,
   };
   palettes.set(char.id, p);
   return p;
@@ -597,21 +748,24 @@ function paletteFor(char) {
 const shared = {};
 function sharedMaterials() {
   if (shared.ink) return shared;
-  // Eye white, deliberately not white: a true white facing the key light lands
-  // over the bloom threshold and the eyes smear. This is the brightest value
-  // on the character that still stays under it, and reading slightly cool
-  // makes the pupil look wetter.
-  // Deliberately not white, and deliberately barely lit by the environment.
-  // A true white facing the key light clears the bloom threshold and the eyes
-  // smear; and at full environment intensity the eye is the whitest thing on
-  // the character, so it takes on whatever the sky is doing -- under the menu's
-  // violet dusk a neutral white came out distinctly mauve, which reads as sore.
-  // Matte, too: the wet look comes from the unlit catchlights, so the sclera
-  // itself does not need a specular lobe to tint. The tint that is left leans
-  // very slightly cool, which is what cancels the menu theme's pink rim.
-  shared.sclera = new THREE.MeshStandardMaterial({
-    color: 0xeaeff4, roughness: 0.82, envMapIntensity: 0.22,
-  });
+  // Eye white, and the one surface on the character that is deliberately not
+  // lit at all.
+  //
+  // It was a standard material with the environment turned down, on the theory
+  // that the sky was what tinted it. It was not: the menu theme's rim light is
+  // 0xffb0e8 at 0.95 and the cavern's fill is 0x8a6cff, and a near-white
+  // diffuse surface takes those straight on. Measured on the shop card the
+  // sclera came out (218, 199, 238) -- a pale rose-lilac -- so the hero's eyes
+  // read as sore, and the same tint was visible on the World 2 board.
+  //
+  // An eye white has no business responding to the weather. It is now unlit,
+  // with the shading painted into the vertices instead: darker up under the
+  // brow, brightest just below the centre where bounce light would come back
+  // up into it. That is how this is done in paint, it costs one shared
+  // geometry, and it means Blip's eyes are the same white in all five worlds.
+  // The value is chosen to sit under the 1.0 linear bloom threshold, so they
+  // still never smear.
+  shared.sclera = new THREE.MeshBasicMaterial({ color: 0xf2f6fb, vertexColors: true });
   shared.ink = new THREE.MeshStandardMaterial({ color: 0x1d2033, roughness: 0.42 });
   // Catchlights are unlit on purpose. A specular highlight has to sit in the
   // same place from every angle or the eye stops looking alive, and at this
@@ -702,7 +856,7 @@ export function buildBloop(char) {
   put(head, faceGeometry(char, p.bodyColor, p.lensColor), p.lens, null, null, null, false);
 
   addEyes(head, char.eyes, p, s);
-  addMouth(head, char.eyes, s);
+  addMouth(head, char.eyes, p);
   // No cheek blush. Two attempts at one both ended as lumps: the patch curves
   // away in x as well as in y, so anything wide enough to read as a cheek has
   // its outer edge standing off the surface. On a face this small it is noise
@@ -736,6 +890,43 @@ const EYE_R = 0.099;
 // body's own silhouette -- a white bite taken out of the blue.
 const EYE_Z = faceZ(EYE_X, EYE_Y, 0.048);
 
+// Pupil geometry, named once because the catchlights have to be placed against
+// it rather than against a guess. The pupil is a sphere set into the sclera;
+// its front surface at a lateral offset `rho` from its own centre is at
+// PUPIL_Z + sqrt(PUPIL_R^2 - rho^2).
+const PUPIL_R = 0.056;
+const PUPIL_DZ = 0.062;    // pupil centre, relative to EYE_Z
+const PUPIL_DY = -0.005;
+
+// A catchlight that *sits on* the pupil instead of intersecting it.
+//
+// This was the single worst edge in the character. The old primary glint was a
+// radius-0.030 sphere centred 0.090 in front of EYE_Z -- which at its lateral
+// offset is behind the pupil's own front surface, so the two spheres cut each
+// other: the pupil took a hard aliased bite out of the light and, at the size
+// the character is actually shown, the left eye read as a crescent moon and the
+// right as a Pac-Man.
+//
+// So the highlight is now solved rather than guessed. Given an offset from the
+// pupil centre it computes the surface depth there, flattens the sphere into a
+// lens (a highlight is a mark on a surface, not a bead glued to it) and parks it
+// PROUD in front of that surface, so nothing can ever cut into it. The offset is
+// clamped so the lens stays inside the pupil's silhouette: a white dot that
+// wanders onto the near-white sclera is a catchlight that has gone out.
+const GLINT_PROUD = 0.006;
+
+function catchlight(head, s, px, dx, dy, r) {
+  const want = Math.hypot(dx, dy);
+  // Keep the whole lens inside the pupil's silhouette, with a little margin.
+  const rho = Math.min(want, PUPIL_R - r - 0.004);
+  const k = want > 1e-6 ? rho / want : 0;
+  const surface = PUPIL_DZ + Math.sqrt(Math.max(0, PUPIL_R * PUPIL_R - rho * rho));
+  const flat = 0.5;
+  put(head, unitSphere(12, 10), s.glint,
+    [px + dx * k, EYE_Y + PUPIL_DY + dy * k, EYE_Z + surface + r * flat + GLINT_PROUD],
+    [r, r, r * flat], null, false);
+}
+
 // A soft ridge above an eye. This replaced a torus ring drawn round the eye:
 // the ring's top arc sank *inside* the sclera and read as blue eyeliner, and
 // its colour came off the body, which on a saturated bloop was far too loud.
@@ -743,25 +934,22 @@ const EYE_Z = faceZ(EYE_X, EYE_Y, 0.048);
 // a line on it.
 function openEye(head, x, p, s, lidDrop) {
   const sign = Math.sign(x);
-  put(head, unitSphere(20, 14), s.sclera, [x, EYE_Y, EYE_Z], EYE_R);
+  put(head, scleraGeometry(), s.sclera, [x, EYE_Y, EYE_Z], EYE_R);
   // Pupils converge very slightly, which is the cheapest trick there is for
   // making a face look like it is looking at you rather than past you.
   const px = x - sign * 0.008;
-  put(head, unitSphere(16, 12), s.ink, [px, EYE_Y - 0.005, EYE_Z + 0.062], 0.056, null, false);
-  // The primary catchlight is mirrored about the centre line and sits *on the
-  // pupil*. It used to be offset the same way on both eyes, as a real light
-  // would be, and the consequence was that the left one landed on the sclera
-  // outside the pupil and vanished: one eye alive, one eye a flat black hole.
-  // It is also much bigger than it was -- at 0.021 it survived neither the
-  // low tier's pixel ratio nor a 60px shop chip.
-  put(head, unitSphere(12, 10), s.glint,
-    [px - sign * 0.024, EYE_Y + 0.030, EYE_Z + 0.090], 0.030, null, false);
+  put(head, unitSphere(16, 12), s.ink, [px, EYE_Y + PUPIL_DY, EYE_Z + PUPIL_DZ], PUPIL_R, null, false);
+  // The primary catchlight is mirrored about the centre line: offset the same
+  // way on both eyes, as a real light would be, the left one landed on the
+  // sclera outside the pupil and vanished -- one eye alive, one eye a flat
+  // black hole.
+  catchlight(head, s, px, -sign * 0.020, 0.026, 0.019);
   // The second, smaller light is what turns a highlight into a wet eye. It is
   // the one that goes when the tier drops, because at half the pixel ratio it
-  // is a flickering speck and the primary is not.
+  // is a flickering speck and the primary is not. (It also used to be buried
+  // whole inside the pupil, so on the tiers that do draw it, it drew nothing.)
   if (tier() !== 'low') {
-    put(head, unitSphere(8, 6), s.glint,
-      [x + sign * 0.030, EYE_Y - 0.034, EYE_Z + 0.076], 0.013, null, false);
+    catchlight(head, s, px, sign * 0.030, -0.026, 0.012);
   }
   if (lidDrop) {
     // Sleepy, not shut. The lid used to be a body-tinted sphere at 78% of the
@@ -771,7 +959,7 @@ function openEye(head, x, p, s, lidDrop) {
     // still reads as an eye.
     const r = EYE_R * 1.02;
     put(head, unitSphere(16, 10), p.lid, [x, EYE_Y + 0.072, EYE_Z + 0.004], [r, r * 0.42, r]);
-    const lash = put(head, arc(EYE_R * 0.82, 0.015, Math.PI * 0.86), s.ink,
+    const lash = put(head, arc(EYE_R * 0.82, 0.015, Math.PI * 0.86), p.faceInk,
       [x, EYE_Y + 0.030, EYE_Z + 0.050], null, [0, 0, Math.PI], false);
     lash.scale.set(1, 0.45, 1);
   }
@@ -782,17 +970,24 @@ function closedEye(head, x, p, s) {
   // mound the arc floats in front of the face and the whole head goes flat,
   // which is exactly what the old happy and sleepy faces did.
   put(head, unitSphere(16, 12), p.lid, [x, EYE_Y, EYE_Z], [EYE_R, EYE_R * 0.80, EYE_R * 0.60]);
-  const a = put(head, arc(0.062, 0.021, Math.PI * 0.86), s.ink,
+  const a = put(head, arc(0.062, 0.021, Math.PI * 0.86), p.faceInk,
     [x, EYE_Y - 0.014, EYE_Z + 0.058], null, null, false);
   a.scale.set(1, 0.80, 1);
 }
 
-function starEye(head, x, p, s) {
-  const r = EYE_R * 0.98;
+function starEye(head, x, s) {
   // Ink behind the star, on every character, not the face tint. Seraph is a
   // pale bloop and a pale-gold star on a pale-gold backing left the 950-coin
   // flagship with no eyes at all -- just a small dark mouth on a blank ball.
-  put(head, unitSphere(16, 12), s.ink, [x, EYE_Y, EYE_Z], [r, r * 0.92, r * 0.55]);
+  //
+  // The backing has to be *bigger than the star*, which for two rounds it was
+  // not: at 0.097 against a bevelled star whose points reach 0.098 the five tips
+  // landed on bare cream and Seraph read as two star-shaped holes with no pupil
+  // behind them. Sized here so a ring of ink still shows outside every point.
+  // Width stops just short of half the eye spacing (EYE_X is 0.112): at 0.118
+  // the two backings intersected across the bridge of the nose and Seraph read
+  // as one dark bar -- star-shaped sunglasses rather than two star eyes.
+  put(head, unitSphere(16, 12), s.ink, [x, EYE_Y, EYE_Z], [0.102, 0.108, 0.055]);
   put(head, starGeometry(), s.goldGlow, [x, EYE_Y, EYE_Z + 0.052], [0.086, 0.086, 0.05],
     [0, 0, x < 0 ? 0.12 : -0.12]);
 }
@@ -803,7 +998,7 @@ function addEyes(head, kind, p, s) {
   } else if (kind === 'sleepy') {
     openEye(head, -EYE_X, p, s, 1); openEye(head, EYE_X, p, s, 1);
   } else if (kind === 'star') {
-    starEye(head, -EYE_X, p, s); starEye(head, EYE_X, p, s);
+    starEye(head, -EYE_X, s); starEye(head, EYE_X, s);
   } else if (kind === 'wink') {
     openEye(head, -EYE_X, p, s); closedEye(head, EYE_X, p, s);
   } else if (kind === 'angry') {
@@ -813,7 +1008,7 @@ function addEyes(head, kind, p, s) {
     // looks like it hates them.
     for (const sgn of [-1, 1]) {
       const bx = sgn * (EYE_X + 0.014), by = EYE_Y + 0.112;
-      put(head, unitBox(), s.ink, [bx, by, faceZ(bx, by, -0.010)],
+      put(head, unitBox(), p.faceInk, [bx, by, faceZ(bx, by, -0.010)],
         [0.118, 0.028, 0.030], [0, 0, sgn * 0.40], false);
     }
   } else {
@@ -821,13 +1016,13 @@ function addEyes(head, kind, p, s) {
   }
 }
 
-function addMouth(head, kind, s) {
+function addMouth(head, kind, p) {
   const y = kind === 'angry' ? -0.112 : -0.104;
   const w = kind === 'angry' ? 0.054 : 0.077;
   // Sunk a little into the face so it reads as a line cut into it rather than
   // a wire hovering in front of it. The old mouth used a fixed z that was well
   // behind the surface, so on most characters it never appeared.
-  const m = new THREE.Mesh(arc(w, 0.021, Math.PI * 0.92), s.ink);
+  const m = new THREE.Mesh(arc(w, 0.021, Math.PI * 0.92), p.faceInk);
   m.position.set(0, y, faceZ(0, y, 0.008));
   m.rotation.z = Math.PI;
   m.scale.set(1, kind === 'angry' ? 0.55 : 0.88, 0.9);
@@ -902,15 +1097,26 @@ function pair(face, at, stalk, p, tipMat, tip, tipR) {
 const UP = new THREE.Vector3(0, 1, 0);
 
 function addHalo(face, s, rayed) {
-  const ry = TOP + 0.078;
+  // Raised well clear of the crown. At TOP + 0.078 the ring sat *on* the head,
+  // and on Seraph -- a cream bloop, in a cream-value glow material -- it read as
+  // a bucket rim the head had been dropped into rather than as a halo floating
+  // over it. The light cone below still bridges the gap, so lifting it does not
+  // leave the ring hanging unattached.
+  const ry = TOP + 0.13;
   const rr = 0.190;
+  // Seraph's halo is solid gold rather than the glow material: her body is
+  // 0xf3eede and goldGlow is a pale emissive cream, so the two matched in value
+  // and the most expensive silhouette on the roster separated by nothing at all.
+  // Lumen keeps the glow -- on a lilac body it has plenty of value to work with,
+  // and a soft-lit halo is that character's whole idea.
+  const metal = rayed ? s.gold : s.goldGlow;
   // One tilted frame holds the ring and its rays, so the rays cannot drift out
   // of the ring's plane the way hand-written Euler angles let them.
   const h = new THREE.Group();
   h.position.y = ry;
   h.rotation.x = -0.16;
   face.add(h);
-  put(h, arc(rr, 0.024, Math.PI * 2, 26), s.goldGlow, null, null, [Math.PI / 2, 0, 0], false);
+  put(h, arc(rr, 0.024, Math.PI * 2, 26), metal, null, null, [Math.PI / 2, 0, 0], false);
   if (rayed) {
     // Seraph's is a rayed halo -- same family as Lumen's, and unmistakably not
     // the same object at thumbnail size.
@@ -918,7 +1124,7 @@ function addHalo(face, s, rayed) {
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
       dir.set(Math.cos(a), 0, Math.sin(a));
-      const ray = put(h, unitCone(6), s.goldGlow,
+      const ray = put(h, unitCone(6), metal,
         [dir.x * (rr + 0.048), 0, dir.z * (rr + 0.048)], [0.020, 0.072, 0.020], null, false);
       ray.quaternion.setFromUnitVectors(UP, dir);
     }
@@ -991,10 +1197,18 @@ function addAccessory(face, char, p, s) {
       pair(face, [0.150, TOP - 0.150, -0.030], horn, p,
         s.ivory, [0.080, 0.312, -0.216], 0.017);
     } else {
+      // Coral's were rooted at TOP - 0.168 with a 0.13-long tube, which put the
+      // whole horn behind the curve of the head: from the fixed camera they came
+      // out as two pins on the skyline and the character read as a plain red
+      // ball -- the same plain red ball as Emberling, 500 coins apart. So they
+      // are half again as long, rooted much closer to the crown, and thrown
+      // almost sideways before hooking up and *forward*. That is the opposite
+      // axis from Emberling's back-swept ram's horns, which is what finally
+      // makes the two silhouettes different objects rather than two reds.
       const horn = taperedTube('hornShort',
-        [[0, 0, 0], [0.064, 0.082, -0.006], [0.120, 0.132, -0.022]], 0.064, 0.022, 14, 9);
-      pair(face, [0.146, TOP - 0.168, -0.008], horn, p,
-        s.ivory, [0.124, 0.138, -0.023], 0.024);
+        [[0, 0, 0], [0.115, 0.058, 0.012], [0.192, 0.168, 0.034]], 0.062, 0.024, 16, 9);
+      pair(face, [0.140, TOP - 0.100, -0.004], horn, p,
+        s.ivory, [0.196, 0.176, 0.036], 0.026);
     }
   } else if (kind === 'halo') {
     addHalo(face, s, char.id === 'seraph');
@@ -1039,16 +1253,22 @@ function addAccessory(face, char, p, s) {
     // already tipped back, a crest that started at t = -0.5 put its first two
     // quills round the back of the head where nothing can see them, and the
     // crest read as one lonely horn.
-    const heights = [0.66, 0.88, 1.0, 0.9, 0.72];
+    const heights = [0.66, 0.90, 1.0, 0.92, 0.72];
     for (let i = 0; i < heights.length; i++) {
       const t = -0.15 + i * 0.2125;
+      const k = i - 2;
       // Splayed left and right as well as fore and aft. The camera sits in the
       // same vertical plane as the crest, so a crest that only ran front to
-      // back projected all five quills onto one line and read as a single
-      // unicorn horn.
+      // back projects all five quills onto one line and reads as a single
+      // unicorn horn -- which is what the previous pass, splaying by roll
+      // alone, still did. Rolling a quill tilts it but leaves its root on the
+      // centre line, so the five roots stayed coincident and the tips only
+      // fanned by a few pixels. The roots are now *moved* off the centre line
+      // as well, by more than a quill's own thickness, and the roll is half
+      // again as strong: five separate spikes in a black cutout.
       put(hat, quill, p.accentSoft,
-        [0, HUG * Math.cos(t) - 0.055, HUG * Math.sin(t)],
-        [1, heights[i], 1], [t * 0.8 - 0.1, 0, (i - 2) * 0.21]);
+        [k * 0.052, HUG * Math.cos(t) - 0.055, HUG * Math.sin(t)],
+        [1, heights[i], 1], [t * 0.8 - 0.1, 0, k * 0.32]);
     }
   } else if (kind === 'glasses') {
     // Rims on the face plane with temple arms running back to the sides of the
@@ -1131,4 +1351,151 @@ export function rollBody(bloop, dir, dist) {
   const { body } = bloop.userData;
   _axis.set(dir.z, 0, -dir.x).normalize().negate();
   body.rotateOnWorldAxis(_axis, -dist / R);
+}
+
+// ---------------------------------------------------------------------------
+// Shop thumbnails
+//
+// The shop exists to sell sixteen silhouettes, and it was drawing sixteen CSS
+// gradient circles with two dots on them: no accessory, no eye style, no
+// horns, no crown. Every hour spent on making Coral read differently from
+// Emberling was invisible in the one screen it was bought for.
+//
+// So this renders the real model -- the same buildBloop() the board uses -- to
+// a small offscreen canvas and hands back a data URL that a chip can drop
+// straight into an <img>. It owns a private renderer, scene, camera, light rig
+// and environment, so it works before initRenderer() has ever run and cannot
+// disturb the live scene if it has.
+//
+// Everything is shared or cached: one WebGL context for the whole batch of
+// sixteen (a context per card would blow past the browser's limit on the third
+// row), one PMREM environment, one result per character, and the context is
+// handed back a moment after the last call so the shop screen does not sit on
+// a second GPU context for as long as it is open.
+// ---------------------------------------------------------------------------
+
+const thumbCache = new Map();
+let thumbGL = null;         // { renderer, scene, camera, env, pmrem }
+let thumbRelease = 0;
+
+// Two-stop vertical gradient as a tiny equirectangular map, run through PMREM.
+// Without an environment the metals go black -- Regalia's crown and Seraph's
+// halo are 0.85+ metalness -- so the chips need one even though nothing else
+// about them is physically ambitious.
+function thumbEnvTexture() {
+  const W = 32, H = 16;
+  const data = new Uint8Array(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    const t = y / (H - 1);                   // 0 = zenith
+    const r = Math.round(THREE.MathUtils.lerp(214, 236, t));
+    const g = Math.round(THREE.MathUtils.lerp(226, 220, t));
+    const b = Math.round(THREE.MathUtils.lerp(248, 206, t));
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function thumbContext(size) {
+  if (thumbGL) {
+    thumbGL.renderer.setSize(size, size, false);
+    return thumbGL;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas, alpha: true, antialias: true, preserveDrawingBuffer: true,
+    });
+  } catch {
+    return null; // no context available; the caller falls back to a flat chip
+  }
+  renderer.setPixelRatio(1);
+  renderer.setSize(size, size, false);
+  renderer.setClearAlpha(0);
+  // Matched to the game so a chip and the board agree about what a character
+  // looks like: same tone mapper, same exposure, same output space.
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const src = thumbEnvTexture();
+  const env = pmrem.fromEquirectangular(src).texture;
+  src.dispose();
+  scene.environment = env;
+  scene.environmentIntensity = 0.65;
+
+  // A fixed three-point rig, deliberately *not* the world's. A chip has to read
+  // the same whichever world the player last played, so the light here never
+  // changes: neutral key from the upper left, cool fill from the right, warm
+  // rim from behind to pick the crown and the horns off the card.
+  const key = new THREE.DirectionalLight(0xfff6e8, 2.1);
+  key.position.set(-1.1, 1.9, 2.0);
+  const fill = new THREE.DirectionalLight(0xd7e6ff, 0.55);
+  fill.position.set(2.0, 0.4, 1.2);
+  const rim = new THREE.DirectionalLight(0xffd9b0, 1.1);
+  rim.position.set(0.6, 1.4, -2.0);
+  scene.add(key, fill, rim, new THREE.AmbientLight(0xdfe6f5, 0.35));
+
+  // Elevation ~40 degrees, which is square-on to the tilted feature group: the
+  // eyes look straight out of the chip, and the crown, halo and horns still
+  // show above the crown line.
+  const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 20);
+  camera.position.set(0, 0.44 + 0.64 * 3.6, 0.77 * 3.6);
+  camera.lookAt(0, 0.44, 0);
+
+  thumbGL = { renderer, scene, camera, env, pmrem, canvas };
+  return thumbGL;
+}
+
+// Frees the private WebGL context a beat after the last thumbnail is taken. The
+// shop asks for sixteen in one go, so a timer that keeps resetting turns that
+// into one context for one frame rather than sixteen contexts held open.
+function scheduleThumbRelease() {
+  clearTimeout(thumbRelease);
+  thumbRelease = setTimeout(() => {
+    if (!thumbGL) return;
+    thumbGL.env.dispose();
+    thumbGL.pmrem.dispose();
+    thumbGL.renderer.dispose();
+    thumbGL.renderer.forceContextLoss();
+    thumbGL = null;
+  }, 400);
+}
+
+// Renders one character to an offscreen canvas and returns a PNG data URL,
+// or null if a WebGL context could not be created (the caller should fall back
+// to whatever flat chip it drew before). Cached per character and size, so
+// calling it once per card on every re-render costs nothing after the first.
+export function characterThumbnail(char, size = 96) {
+  const key = `${char.id}|${size}`;
+  const hit = thumbCache.get(key);
+  if (hit !== undefined) return hit;
+
+  const gl = thumbContext(size);
+  if (!gl) { thumbCache.set(key, null); return null; }
+
+  const bloop = buildBloop(char);
+  // The contact patch is for standing on a tile. A chip has no tile, and the
+  // documented `lift` override is how bloop.js is told to put it away.
+  if (bloop.userData.shadow) bloop.userData.shadow.userData.lift = -1;
+  gl.scene.add(bloop);
+  gl.renderer.render(gl.scene, gl.camera);
+  const url = gl.renderer.domElement.toDataURL('image/png');
+  gl.scene.remove(bloop);
+  // Nothing to dispose: every geometry and material a bloop is made of is
+  // cached and owned by this module, and is still in use by the live board.
+
+  thumbCache.set(key, url);
+  scheduleThumbRelease();
+  return url;
 }

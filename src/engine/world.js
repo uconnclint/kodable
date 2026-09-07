@@ -165,6 +165,36 @@ function rockBase(theme) {
   return c.multiplyScalar(MAP_GAIN);
 }
 
+// How far the island's flank is lifted so it separates from the sky behind it.
+//
+// Fixing the tile-top-versus-side inversion by darkening the rock moved the
+// silhouette problem rather than solving it. Measured off a still, with the
+// cliff isolated and compared against the sky *at the same pixels*, the flank
+// came out at 1.9x the sky's luminance in World 2, 1.5x in World 3 and 1.3x in
+// World 5. At those numbers the island has no outline at all: it stops being a
+// thing floating in air and becomes a shape cut out of the backdrop, and a
+// child cannot tell where the land ends.
+//
+// The three worlds it fails in are the three with a dark sky, which is also why
+// brightening is the only available move -- there is no room left underneath
+// them. Worlds 0, 1 and 4 have bright skies and separate the other way (their
+// cliffs read between 2.6x and 7.5x *darker* than the air), so they are left
+// exactly as they were.
+//
+// World 4 is the one entry below 1. Its sky was darkened to get its blue board
+// off its blue backdrop, and the flank followed the sky down instead of holding
+// still, so it ended up level with the air again. There the fix is the opposite
+// one -- the sky is still the brighter of the two, so the cliff separates by
+// going *further* down and reading as a proper silhouette, which is also what
+// widens the tile-top-to-tile-side step rather than narrowing it.
+//
+// These are measured constants, not derived ones, and deliberately so: what the
+// eye judges is the rendered pixel, and the flank renders at anywhere between
+// 18% and 57% of its albedo depending on how much of the key light reaches it.
+// Any formula in albedo space gets the answer wrong by half. Re-measure with
+// the review harness if a sky colour moves.
+const CLIFF_LIFT = { 2: 1.22, 3: 1.15, 4: 0.56, 5: 1.72 };
+
 // ---------------------------------------------------------------------------
 // Geometry accumulation
 // ---------------------------------------------------------------------------
@@ -488,7 +518,7 @@ function buildBoard(level, theme, themeKey, owned) {
   const colorPal = {};
   for (const k of Object.keys(TILE_ALBEDO)) colorPal[k] = tilePalette(TILE_ALBEDO[k]);
 
-  const base = rockBase(theme);
+  const base = rockBase(theme).multiplyScalar(CLIFF_LIFT[themeKey] || 1);
   const bounce = new THREE.Color(theme.bounce);
   const pal = {
     // A hairline of occlusion right under the grass lip, and then the flank
@@ -571,6 +601,11 @@ function buildBoard(level, theme, themeKey, owned) {
       mat.emissiveIntensity = 0.34;
     }
     const mesh = new THREE.Mesh(geo, mat);
+    // Named so a still can be taken apart: the review harness isolates the tile
+    // tops from the rock to measure each against the sky behind it, and doing
+    // that by guessing at pixels is how the last two rounds got the numbers
+    // wrong. Costs a string per draw call.
+    mesh.name = isRock ? 'island.rock' : `island.top.${key}`;
     mesh.receiveShadow = true;
     mesh.castShadow = isRock;
     meshes.push(mesh);
@@ -820,7 +855,17 @@ function buildPortal(pos, stops, owned) {
     const p = sg.attributes.position;
     const cols = new Float32Array(p.count * 4);
     for (let i = 0; i < p.count; i++) {
-      const k = 1 - (p.getY(i) + h / 2) / h; // 1 at the base, 0 at the top
+      // 1 at the base, 0 at the top -- and the clamp is load-bearing, not
+      // defensive tidying. `p.getY()` round-trips through float32, so the top
+      // ring comes back as 0.42500001 rather than 0.425 and this expression
+      // lands on -1.4e-8. `Math.pow(negative, 1.6)` is NaN, so seventeen of the
+      // shaft's thirty-four vertices were being handed a NaN vertex alpha.
+      // On the low tier that is a few dead pixels behind the portal ring; on
+      // every tier with post-processing the bloom pass's separable blur smears
+      // those NaNs across the whole mip chain, the composite adds them back
+      // over the scene, and OutputPass writes NaN to the canvas as transparent
+      // black -- which is why 43-78% of the frame was bare page background.
+      const k = Math.min(1, Math.max(0, 1 - (p.getY(i) + h / 2) / h));
       // Amber, not the old near-white (1, 0.94, 0.76). An additive layer's
       // colour is what the pixel saturates *towards*, so a near-white one has
       // only one place it can end up.

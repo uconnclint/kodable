@@ -97,8 +97,14 @@ export function renderPlay(session) {
   // length reads as a heading-level fact rather than as fine print floating
   // off at the far edge of a wide bar.
   const mainCount = h('span.tray-count', { role: 'status' });
+  // role="button", not role="group". This row is tabbable, click-activated and
+  // Enter/Space-activated — it is a control by every behaviour it has — and
+  // announcing it as a group told a screen-reader user it was a container with
+  // nothing to press. aria-pressed then carries the same "this is the surface
+  // chips land in" state that the .active class carries visually. Same
+  // treatment the loop block in this file already uses.
   const mainTray = h('div.tray.row-main.clickable', {
-    role: 'group', 'aria-label': 'Main program', tabindex: '0',
+    role: 'button', 'aria-label': 'Main program', 'aria-pressed': 'true', tabindex: '0',
     onClick: () => setActive('main'),
     onKeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setActive('main'); } },
   },
@@ -115,11 +121,11 @@ export function renderPlay(session) {
     fnSlots = h('div.slot-row');
     fnCount = h('span.tray-count', { role: 'status' });
     fnTray = h('div.tray.row-fn.clickable', {
-      role: 'group', 'aria-label': 'Function F1', tabindex: '0',
+      role: 'button', 'aria-label': 'Function F1', 'aria-pressed': 'false', tabindex: '0',
       onClick: () => setActive('fn'),
       onKeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setActive('fn'); } },
     },
-      h('div.tray-head', {}, h('div.tray-label', {}, 'F1 ', icon('function')), fnCount), fnSlots);
+      h('div.tray-head', {}, h('div.tray-label', {}, 'F1', icon('function')), fnCount), fnSlots);
   }
 
   let condTray = null;
@@ -146,7 +152,7 @@ export function renderPlay(session) {
   const palette = h('div.palette', {},
     ...a.dirs.map((d) =>
       h(`button.token.d-${d}`, { 'aria-label': `Add ${DIR_NAME[d]} command`, onClick: () => addDir(d) }, dirIcon(d))),
-    a.loops ? h('button.token.loop-block', { 'aria-label': 'Add loop block', onClick: addLoop }, icon('loop'), ' loop') : null,
+    a.loops ? h('button.token.loop-block', { 'aria-label': 'Add loop block', onClick: addLoop }, icon('loop'), 'loop') : null,
     a.functions ? h('button.token.call-token', { 'aria-label': 'Add F1 function call', onClick: addCall }, 'F1') : null,
   );
 
@@ -160,17 +166,21 @@ export function renderPlay(session) {
     h('span', {}, `Perfect: ≤ ${level.parCommands} main block${level.parCommands === 1 ? '' : 's'}`),
   );
 
-  const runBtn = h('button.btn.big.green', { onClick: run }, icon('run'), ' RUN');
-  const previewBtn = h('button.btn.big.blue', { onClick: preview }, icon('preview'), ' Preview');
-  const hintBtn = h('button.btn.ghost.hint-btn', { onClick: hint }, icon('question'), ' Hint');
+  const runBtn = h('button.btn.big.green', { onClick: run }, icon('run'), 'RUN');
+  const previewBtn = h('button.btn.big.blue', { onClick: preview }, icon('preview'), 'Preview');
+  // A drawn ring rather than the question-block art: drained to the row's ink
+  // that art became a solid dark square, the heaviest mark among three open
+  // arcs, which put the most visual weight on the least important control in
+  // the row. The ring matches the Undo/Reset arcs' weight and idiom.
+  const hintBtn = h('button.btn.ghost.hint-btn', { onClick: hint }, h('span.q-glyph', { 'aria-hidden': 'true' }, '?'), 'Hint');
   // All four utility glyphs come from the same drawn set, at the same weight,
   // and the stylesheet drains them to one ink. Undo was a bare '↶' character
   // rendered in whatever fallback font the device had, next to a thin arc, an
   // illustrated broom and a solid badge — four idioms in one row of four
   // buttons. Undo is now the Reset arrow mirrored, which is also exactly what
   // the gesture is.
-  const undoBtn = h('button.btn.ghost.utility-btn', { 'aria-label': 'Undo last program edit', onClick: undo }, icon('replay', 'flip-x'), ' Undo');
-  const resetBtn = h('button.btn.ghost.utility-btn', { 'aria-label': 'Reset Bloop to the start', onClick: () => { if (!running) { session.resetBoard(); flash('Bloop is back at the start.'); } } }, icon('replay'), ' Reset');
+  const undoBtn = h('button.btn.ghost.utility-btn', { 'aria-label': 'Undo last program edit', onClick: undo }, icon('replay', 'flip-x'), 'Undo');
+  const resetBtn = h('button.btn.ghost.utility-btn', { 'aria-label': 'Reset Bloop to the start', onClick: () => { if (!running) { session.resetBoard(); flash('Bloop is back at the start.'); } } }, icon('replay'), 'Reset');
   const clearBtn = h('button.btn.ghost.utility-btn', { onClick: () => {
     if (!running && (program.main.length || (fnSlots && program.functions[0].length))) {
       remember();
@@ -181,17 +191,20 @@ export function renderPlay(session) {
       playSfx('remove');
       render();
     }
-  } }, icon('trash'), ' Clear');
+  } }, icon('trash'), 'Clear');
 
   const el = h('div.screen#screen-play', {},
     h('div.hud-top', {},
       h('button.icon-btn', { 'aria-label': 'Back to levels', onClick: () => { if (!running) { playSfx('ui'); session.exit(); } } }, icon('back')),
       h('div.lv-name', {}, `${level.id.toUpperCase()} · ${level.name}`),
-      h('div.spacer', { style: { flex: 1 } }),
+      h('div.spacer'),
       coins,
     ),
     h('div.hud-coach', {}, msg, goals),
-    h('div', { style: { flex: 1 }, onClick: () => {} }),
+    // The board's share of the column. It is a spacer and nothing else — it
+    // used to carry an empty click handler, which cost every tap on the scene a
+    // listener that did nothing.
+    h('div.board-space'),
     // The run controls live *inside* the console card, as its right-hand
     // column on a wide screen. Two things fall out of that: the card is no
     // longer 60% blank paper on its right side, and the HUD gives a whole row
@@ -313,7 +326,9 @@ export function renderPlay(session) {
     const body = h('div.loop-body', {},
       ...tok.body.map((b) => tokenEl(b, tok.body)),
       tok.body.length === 0
-        ? h(`span.token.ghost-slot${loopActive ? '.next' : ''}`, { 'aria-hidden': 'true', style: { width: '40px', height: '40px', minWidth: '40px' } }, loopActive ? '+' : '')
+        // No inline sizing: `.token.loop-block .token` in the stylesheet already
+        // sizes every chip inside a loop to 40px, and this well is one of them.
+        ? h(`span.token.ghost-slot${loopActive ? '.next' : ''}`, { 'aria-hidden': 'true' }, loopActive ? '+' : '')
         : null,
     );
     const del = h('button.loop-del', { 'aria-label': 'Remove loop block', onClick: (ev) => { ev.stopPropagation(); removeToken(program.main, tok); } }, '✕');
@@ -390,6 +405,11 @@ export function renderPlay(session) {
       arrowEl.classList.toggle('empty', !selected);
       arrowEl.parentElement.setAttribute('aria-label', `Set ${colorName(color)} condition. ${selected ? `${DIR_NAME[selected]} selected.` : 'No direction selected.'}`);
     }
+    // The trays announce their own state: `.active` and aria-pressed are the
+    // same fact told to two different audiences, so they are set from one
+    // place rather than drifting apart.
+    mainTray.setAttribute('aria-pressed', String(mainTray.classList.contains('active')));
+    if (fnTray) fnTray.setAttribute('aria-pressed', String(fnTray.classList.contains('active')));
     undoBtn.disabled = undoStack.length === 0;
     justAdded = null;
   }
@@ -482,17 +502,21 @@ export function renderPlay(session) {
       h('div.modal', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Level results' },
         h('h2', {}, res.starsGot === 3 ? h('span', {}, icon('win'), ' Amazing!') : 'Level Complete!'),
         h('div.stars-row', {}, ...starRow(res.starsGot, 3)),
-        summary.perfect ? h('div.earn-line.perfect', {}, icon('perfect'), ' PERFECT — under par!') : null,
-        h('div.earn-line', {}, `+${summary.coins} `, icon('coin'), ' earned'),
+        summary.perfect ? h('div.earn-line.perfect', {}, icon('perfect'), 'PERFECT — under par!') : null,
+        // No literal spaces. `.earn-line` is a flex row with a 6px gap, and a
+        // space between two children becomes an anonymous flex item *on top of*
+        // that gap — which is why the coin sat ~16px from "earned" and ~6px
+        // from "+35" in the same line.
+        h('div.earn-line', {}, `+${summary.coins}`, icon('coin'), 'earned'),
         h('div.modal-btns', {},
           h('button.btn.ghost', { onClick: () => {
             wrap.remove();
             session.replay();
             msg.textContent = prompt;
             setTone(null);
-          } }, icon('replay'), ' Replay'),
-          h('button.btn.ghost', { onClick: () => { wrap.remove(); session.exit(); } }, icon('back'), ' Levels'),
-          session.hasNext() ? h('button.btn.green', { onClick: () => { wrap.remove(); session.next(); } }, 'Next ', icon('next')) : null,
+          } }, icon('replay'), 'Replay'),
+          h('button.btn.ghost', { onClick: () => { wrap.remove(); session.exit(); } }, icon('back'), 'Levels'),
+          session.hasNext() ? h('button.btn.green', { onClick: () => { wrap.remove(); session.next(); } }, 'Next', icon('next')) : null,
         ),
       ),
     );

@@ -6,6 +6,7 @@ import { state, worldUnlocked, levelUnlocked, buyCharacter, selectCharacter, res
 import { achievements } from '../game/achievements.js';
 import { badges } from '../game/badges.js';
 import { characters } from '../game/characters.js';
+import { characterThumbnail } from '../engine/bloop.js';
 import { playSfx, setMuted, isMuted } from '../audio/sfx.js';
 
 export const WORLD_INFO = [
@@ -53,11 +54,11 @@ export function renderMenu() {
       h('div.tagline', {}, 'A 3D coding adventure — program your bloop!'),
     ),
     h('div.menu-buttons', {},
-      h('button.btn.big.green', { onClick: () => { playSfx('run'); ctx.show('worldmap'); } }, icon('play'), ' PLAY'),
+      h('button.btn.big.green', { onClick: () => { playSfx('run'); ctx.show('worldmap'); } }, icon('play'), 'PLAY'),
       h('div.menu-row', {},
-        h('button.btn', { onClick: () => { playSfx('ui'); ctx.show('characters'); } }, icon('bloop'), ' Bloops'),
-        h('button.btn.orange', { onClick: () => { playSfx('ui'); ctx.show('achievements'); } }, icon('trophy'), ' Awards'),
-        h('button.btn', { onClick: () => { playSfx('ui'); ctx.show('badges'); } }, icon('badge'), ' Badges'),
+        h('button.btn', { onClick: () => { playSfx('ui'); ctx.show('characters'); } }, icon('bloop'), 'Bloops'),
+        h('button.btn.orange', { onClick: () => { playSfx('ui'); ctx.show('achievements'); } }, icon('trophy'), 'Awards'),
+        h('button.btn', { onClick: () => { playSfx('ui'); ctx.show('badges'); } }, icon('badge'), 'Badges'),
       ),
       h('div.menu-row', {}, muteBtn),
       // The two grown-up affordances, together and away from the play buttons.
@@ -73,7 +74,7 @@ export function renderMenu() {
           onClick: () => {
             if (confirm('Reset ALL progress? Every star, badge and bloop will be erased. This cannot be undone!')) { resetAll(); location.reload(); }
           },
-        }, icon('trash'), ' Reset all progress'),
+        }, icon('trash'), 'Reset all progress'),
       ),
     ),
     h('div.copyright', {}, '© 2026 Clint McLeod'),
@@ -104,7 +105,7 @@ export function renderWorldMap() {
       h('h3', {}, `World ${w.n}: ${w.name}`),
       h('div.w-sub', {}, w.sub),
       h('div.w-progress', {}, h('div', { style: { width: `${(done / 12) * 100}%` } })),
-      h('div.w-stats', {}, h('span', {}, `${done}/12 levels`), h('span', {}, icon('star-filled'), ` ${stars}/36`)),
+      h('div.w-stats', {}, h('span', {}, `${done}/12 levels`), h('span', {}, icon('star-filled'), `${stars}/36`)),
       // A locked card should explain itself. Previously the only hint was a
       // translucent veil with a padlock, which read as a rendering fault.
       unlocked ? null : h('div.w-locked-note', {}, icon('lock'), `Finish 9 levels in World ${w.n - 1} to open this`),
@@ -117,7 +118,7 @@ export function renderWorldMap() {
       h('div.title', {}, 'Choose a World'),
       h('div.spacer'),
       coinPill(state.coins),
-      h('div.coin-pill', { style: { marginLeft: '4px' } }, icon('star-filled'), ` ${starsTotal()}/180`),
+      h('div.coin-pill', {}, icon('star-filled'), `${starsTotal()}/180`),
     ),
     h('div.panel-scroll', {}, h('div.world-grid', {}, cards)),
   );
@@ -127,10 +128,14 @@ export function renderWorldMap() {
 export function renderLevels() {
   const w = WORLD_INFO[ctx.currentWorld - 1];
   const wl = ctx.allLevels.filter((l) => l.world === ctx.currentWorld).sort((a, b) => a.index - b.index);
+  // The one card that says "start here". Eleven locked cards and one playable
+  // one differed only by fill, and 1.18:1 of it, so the screen had no positive
+  // mark for the thing it is actually asking a child to do next.
+  const nextUp = wl.find((l) => levelUnlocked(l, ctx.allLevels) && !state.completed[l.id]);
   const cards = wl.map((lv) => {
     const unlocked = levelUnlocked(lv, ctx.allLevels);
     const stars = state.stars[lv.id] || 0;
-    return h(`button.level-card${unlocked ? '' : '.locked'}${state.perfect[lv.id] ? '.perfect' : ''}`, {
+    return h(`button.level-card${unlocked ? '' : '.locked'}${lv === nextUp ? '.next-up' : ''}${state.perfect[lv.id] ? '.perfect' : ''}`, {
       disabled: !unlocked,
       'aria-label': unlocked
         ? `Level ${lv.index}: ${lv.name}. ${stars} of 3 stars${state.perfect[lv.id] ? ', perfect' : ''}.`
@@ -155,11 +160,12 @@ export function renderLevels() {
 
   return screen('screen-levels',
     h('div.topbar', {}, backBtn('worldmap'),
-      h('div.title', {}, icon(`world-${w.n}`), ` ${w.name}`),
+      h('div.title', {}, icon(`world-${w.n}`), w.name),
       h('div.spacer'),
       coinPill(state.coins),
     ),
-    h('div.panel-scroll', {}, h('div.level-grid', {}, cards)),
+    // --wc is the world's accent, which the next-up card's rail reads.
+    h('div.panel-scroll', {}, h('div.level-grid', { style: { '--wc': w.color } }, cards)),
   );
 }
 
@@ -175,17 +181,23 @@ export function renderAchievements() {
       // it is. Sixty-three identical question marks on identical grey plates
       // hid the entire bronze/silver/gold ladder — which is the one thing that
       // makes a wall of awards feel like a wall worth climbing.
+      // The plate carries the tier; the glyph carries the award. Every
+      // achievement ships its own icon and the wall was throwing all 63 of
+      // them away in favour of one medal drawing repeated 63 times, so the
+      // only thing separating one row from the next was 13px of description.
       return h(`div.ach-card.t-${a.tier}${got ? '' : '.locked'}`, {},
-        h('div.a-icon', {}, icon(`medal-${a.tier}`),
+        h('div.a-icon', {}, h('span.a-glyph', { 'aria-hidden': 'true' }, a.icon),
           got ? null : h('span.a-lock', { 'aria-hidden': 'true' }, icon('lock'))),
         h('div', {}, h('h4', {}, a.name), h('p', {}, a.desc)),
-        h('div.a-coins', {}, `+${a.coins} `, icon('coin')),
+        // No literal space before the coin: the row is a flex container with a
+        // gap, so a space becomes a second, unequal gutter of its own.
+        h('div.a-coins', {}, `+${a.coins}`, icon('coin')),
       );
     });
 
   return screen('screen-achievements',
     h('div.topbar', {}, backBtn('menu'),
-      h('div.title', {}, icon('trophy'), ' Achievements'),
+      h('div.title', {}, icon('trophy'), 'Achievements'),
       h('div.spacer'), coinPill(state.coins),
     ),
     h('div.progress-line', {}, h('span', {}, `${unlockedCount} of ${achievements.length} unlocked`)),
@@ -202,7 +214,7 @@ export function renderBadges() {
     // unearned badge for a padlock turned a wall of twenty-two distinct awards
     // into twenty-two copies of one shape.
     return h(`div.badge-card${earned ? '' : '.locked'}`, {},
-      h('div.b-icon', {}, icon('badge')),
+      h('div.b-icon', {}, h('span.b-glyph', { 'aria-hidden': 'true' }, b.icon)),
       h('h4', {}, b.name),
       h('p', {}, b.desc),
       earned ? null : h('div.lock-badge', { 'aria-hidden': 'true' }, icon('lock')),
@@ -211,7 +223,7 @@ export function renderBadges() {
 
   return screen('screen-badges',
     h('div.topbar', {}, backBtn('menu'),
-      h('div.title', {}, icon('badge'), ' Badge Wall'),
+      h('div.title', {}, icon('badge'), 'Badge Wall'),
       h('div.spacer'),
     ),
     h('div.progress-line', {}, h('span', {}, `${got} of ${badges.length} earned`)),
@@ -220,6 +232,16 @@ export function renderBadges() {
 }
 
 // ---------- CHARACTERS ----------
+// One card's avatar: the rendered model when WebGL is available, the flat
+// gradient chip when it is not.
+function charChip(c) {
+  const shot = characterThumbnail(c, 168);
+  if (!shot) {
+    return h('div.c-ball', { style: { '--cb': c.colors.body, '--cb2': c.colors.accent } });
+  }
+  return h('img.c-ball.c-shot', { src: shot, alt: '', width: '58', height: '58', draggable: 'false' });
+}
+
 export function renderCharacters() {
   let selectedId = state.currentChar;
 
@@ -232,14 +254,20 @@ export function renderCharacters() {
       return h(`button.char-card${c.id === selectedId ? '.selected' : ''}${owned ? '.owned' : '.locked'}`, {
         onClick: () => { playSfx('select'); selectedId = c.id; rerender(); ctx.previewCharacter(c); },
       },
-        // Body *and* accent, because on hue alone Mossy, Minty and Zapp were
-        // three greens and Rosie, Coral and Bubbles three pinks — a difference
-        // a colour-blind child cannot see at all. The eyes come from CSS.
-        h('div.c-ball', { style: { '--cb': c.colors.body, '--cb2': c.colors.accent } }),
+        // The real 3D model, rendered once per character to an offscreen
+        // canvas and cached. This grid exists to sell sixteen silhouettes, so
+        // drawing them all as the same tinted circle sold none of them: the
+        // crown, the horns, the headphones and the eye styles are the entire
+        // reason to save up 1200 coins, and they were invisible here.
+        // `characterThumbnail` returns null if it cannot get a GL context, in
+        // which case we keep the flat chip — body *and* accent, because on hue
+        // alone Mossy, Minty and Zapp were three greens and Rosie, Coral and
+        // Bubbles three pinks, a difference a colour-blind child cannot see.
+        charChip(c),
         h('h4', {}, c.name),
         owned
           ? h('div.c-cost', {}, c.id === state.currentChar ? '✓ Active' : 'Owned')
-          : h(`div.c-cost${state.coins >= c.cost ? '.afford' : ''}`, {}, icon('coin'), ` ${c.cost}`),
+          : h(`div.c-cost${state.coins >= c.cost ? '.afford' : ''}`, {}, icon('coin'), String(c.cost)),
       );
     }));
 
@@ -275,7 +303,7 @@ export function renderCharacters() {
 
   return screen('screen-characters',
     h('div.topbar', {}, backBtn('menu'),
-      h('div.title', {}, icon('bloop'), ' Bloop Collection'),
+      h('div.title', {}, icon('bloop'), 'Bloop Collection'),
       h('div.spacer'), coinPill(state.coins),
     ),
     h('div.char-layout', {}, listEl, detailEl),

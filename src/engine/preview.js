@@ -241,10 +241,21 @@ export function showPreviewPath(level, result) {
       // Perpendicular in the ground plane. Constant width: a ribbon that
       // narrows through a turn is exactly where a child needs it widest.
       side.set(-tan.z, 0, tan.x).normalize().multiplyScalar(HALF_W);
-      // Pinch the two ends over a fixed 0.3 units so the ribbon eases in and
-      // out instead of stopping on a cut-off rectangle edge.
-      const fromEnd = Math.min(len[i], total - len[i]);
-      const taper = Math.min(1, fromEnd / 0.3) * 0.55 + 0.45;
+      // Pinch the start over a fixed 0.3 units so the ribbon eases in instead
+      // of beginning on a cut-off rectangle edge...
+      const startTaper = Math.min(1, len[i] / 0.3) * 0.55 + 0.45;
+      // ...and draw the destination end out into a *point* over the whole gap
+      // it left for the portal. Tapering that end over 0.3 as well left the
+      // ribbon at 45% width and then simply stopping, half a tile short of the
+      // exit: a hard cut with nothing after it, which reads as "the path ends
+      // here" rather than as "the path continues into that". Narrowed over the
+      // full 0.92 it becomes an arrow aimed at the portal, and the gold chevron
+      // in the gap picks the motion up where the ribbon lets it go.
+      const toEnd = total - len[i];
+      const endTaper = win
+        ? Math.pow(Math.min(1, toEnd / 0.62), 0.6)
+        : Math.min(1, toEnd / 0.3) * 0.55 + 0.45;
+      const taper = Math.min(startTaper, endTaper);
       const o = i * 6;
       pos[o] = p.x + side.x * taper; pos[o + 1] = p.y; pos[o + 2] = p.z + side.z * taper;
       pos[o + 3] = p.x - side.x * taper; pos[o + 4] = p.y; pos[o + 5] = p.z - side.z * taper;
@@ -369,16 +380,28 @@ export function showPreviewPath(level, result) {
     // in. Gold, because that is the colour of the thing it points at.
     const dirEnd = dirs.length ? dirs[dirs.length - 1] : new THREE.Vector3(1, 0, 0);
     const gap = new THREE.Vector3();
-    pathPoint(P, dirs, corner, Math.min(d, (sEnd + d) / 2), gap);
-    const chev = chevron(gap, dirEnd, GOLD, 0.62, 0.95, 10);
+    // Parked at the ribbon's own tip rather than in the middle of the gap. Half
+    // way to the exit put the chevron's leading point *inside the portal*, on
+    // top of the dark bowl -- which is precisely the cue the ribbon steps aside
+    // to protect. At the tip it reads as the arrowhead of the tapering ribbon,
+    // and its whole travel stays clear of the portal's 0.4-tile annulus.
+    pathPoint(P, dirs, corner, Math.min(d, sEnd + 0.16), gap);
+    const chev = chevron(gap, dirEnd, GOLD, 0.55, 0.95, 10);
     if (chev.material) stops.push(onFrame((dt, t) => {
       // Slides towards the portal and fades as it arrives, on a loop: an
       // unmistakable "in there", with none of it landing on the portal itself.
       const k = (t * 1.15) % 1;
-      chev.position.x = gap.x + dirEnd.x * (k * 0.34 - 0.1);
-      chev.position.z = gap.z + dirEnd.z * (k * 0.34 - 0.1);
-      chev.scale.setScalar(0.62 * (1 + k * 0.14));
-      chev.material.opacity = 0.95 * Math.min(1, k * 5) * (1 - k) * (1 - k) * 1.9;
+      chev.position.x = gap.x + dirEnd.x * (k * 0.18 - 0.05);
+      chev.position.z = gap.z + dirEnd.z * (k * 0.18 - 0.05);
+      chev.scale.setScalar(0.55 * (1 + k * 0.14));
+      // Floored, not faded to nothing. The old curve spent most of its loop at
+      // or near zero opacity, so at most frames the predicted path simply
+      // stopped: the one mark that says "and then in there" was missing from
+      // the majority of the frames a child looks at. It now breathes between a
+      // clearly visible 0.38 and full, so the destination cue is always present
+      // and the animation is a pulse on top of it rather than the whole of it.
+      const pulse = Math.min(1, Math.min(1, k * 5) * (1 - k) * (1 - k) * 1.9);
+      chev.material.opacity = 0.52 + 0.43 * pulse;
     }));
   } else if (!win) {
     // Stopping short lands on an ordinary tile, so there is no identity to

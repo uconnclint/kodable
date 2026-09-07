@@ -64,21 +64,49 @@ function menuBackdrop() {
   frameView(new THREE.Vector3(0, 0, 0), parsed.cols + 2, parsed.rows + 2);
 }
 
+// The shop's hero. This is the only place in the game a character is shown for
+// its own sake, and it was framed as scenery: 448 x 552 pixels of bloop in a
+// 3200 x 2000 frame, sitting low and right of the free area with roughly a
+// thousand by two thousand pixels of empty purple above it. The card list ends
+// at 29% of the width and the info card starts at 71%, so the free pane is
+// exactly the middle of the viewport -- which is where the hero framing mode
+// aims already. It just needed to be centred *in* it and framed tight.
 function previewBackdrop(char) {
   clearBackdrop();
   applyTheme(0);
   const bloop = buildBloop(char);
-  bloop.scale.setScalar(2.2);
-  bloop.position.set(1.2, -0.4, 0);
+  bloop.scale.setScalar(2.4);
+  // On the origin, so the framing box and the character have the same centre.
+  // Offsetting the model inside a loosely framed box is what put it off to one
+  // side of its own pane.
+  bloop.position.set(0, 0, 0);
+  // No contact patch: there is no ground here, and a shadow disc floating in
+  // open space reads as a smudge on the backdrop. This is the documented
+  // override in bloop.js -- a lift below the floor fades the patch out.
+  if (bloop.userData.shadow) bloop.userData.shadow.userData.lift = -1;
   scene.add(bloop);
   let spin = 0;
   const stopIdle = onFrame((dt, t) => {
     spin += dt;
     bloop.rotation.y = Math.sin(spin * 0.8) * 0.6;
-    bloop.position.y = -0.4 + Math.sin(t * 2) * 0.06;
+    bloop.position.y = Math.sin(t * 2) * 0.06;
   });
   backdrop = { bloop, stopIdle };
-  frameView(new THREE.Vector3(0.6, 0, 0), 6, 4);
+  // A box just big enough to hold the tallest character, with a little air.
+  // frameView always centres its box on y = 0, and a bloop's origin is at its
+  // *feet* -- so the vertical extent has to be given as "from just under the
+  // floor to just over the crown" (Regalia's points and Seraph's halo both
+  // reach about 0.98 model units, which is 2.35 world units at this scale).
+  // Passing a symmetric yLo/yHi instead is what left the character sitting a
+  // couple of hundred pixels above the middle of its own pane. Tight framing is
+  // the whole point: the subject of this screen is one bloop, at a considered
+  // size, in the middle of the space the shop's two panels leave for it.
+  // The depth span is deliberately much smaller than the width. frameView fits
+  // the *corners* of a box, and from 53 degrees above, depth costs more
+  // projected height than height does -- so a box as deep as the character is
+  // wide spends a third of the pane framing empty air in front of and behind a
+  // sphere. Ball ends up filling ~45% of the frame height, centred.
+  frameView(new THREE.Vector3(0, 0, 0), 1.8, 0.6, { yLo: -0.35, yHi: 2.25 });
 }
 
 function spawnBloop() {
@@ -164,6 +192,13 @@ function startLevel(level) {
         trailColor: (characters.find((c) => c.id === state.currentChar) || characters[0]).trail,
         onCommand: cbs.onCommand,
         onDone() {
+          // Hand the character back to the idle animation. run() stopped it on
+          // the way in and nothing ever started it again, so after a run -- won
+          // or failed -- Bloop stood perfectly still until the board was
+          // rebuilt: no breath, no sway, no slow turn. By the time this fires
+          // the animator has finished its last beat and the rig is at rest.
+          if (stopIdle) stopIdle();
+          stopIdle = idleBloop(bloop);
           const summary = recordRun(level, res, program, allLevels);
           const unlocks = checkUnlocks();
           cbs.onDone(res, summary, unlocks);

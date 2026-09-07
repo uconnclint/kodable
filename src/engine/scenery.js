@@ -11,7 +11,7 @@
 // and about nine hundred triangles.
 import * as THREE from 'three';
 import { flags } from './quality.js';
-import { onFrame, getCamera } from './renderer.js';
+import { onFrame, getCamera, usableBandNDC } from './renderer.js';
 import { glowDiscTexture } from './textures.js';
 
 function mulberry(seed) {
@@ -47,12 +47,40 @@ function finish(out) {
 // light and becoming the brightest object on the screen, which is exactly what
 // a first pass at this did in the crystal cavern.
 //
-// Islands fade towards `theme.ground`, not `theme.horizon`: `ground` is the
-// colour the sky dome actually paints *below* the horizon line, which is where
-// these hang. Fading to the horizon colour instead leaves a bright band of
-// island floating on a dark sky.
-function hazed(base, air, amount, value) {
-  return base.clone().lerp(air, amount).multiplyScalar(value);
+// Islands fade towards the sky where they actually hang, which is mostly
+// `theme.ground` -- the colour the dome paints below the horizon line -- with a
+// little `theme.horizon` in it, because they sit just under that line and
+// the dome is still mixing towards it there. Fading to the horizon alone leaves
+// a bright band of island floating on a dark sky; fading to `ground` alone left
+// World 3's islands at a quarter of the luminance of the air behind them.
+//
+// The `multiplyScalar(value)` this used to end with was aerial perspective
+// running backwards. Haze does one thing: it puts more and more air between the
+// eye and the object until the object *is* the air. It never darkens. Measured,
+// the old islands landed at L 0.18 against a sky at L 0.41 in World 4 and L 0.28
+// against L 0.51 in World 1 -- consistently further from the backdrop than the
+// board itself was, which is why they read as ink blots and holes rather than as
+// distant land, and why on the menu they were grey-blue polygons on a purple
+// field with no hue relationship to it at all. So the only knob left is how far
+// into the air a surface has gone.
+//
+// And that amount is solved, not dialled. How far a surface has to travel to
+// look like distant land depends entirely on how far from the air it starts: a
+// meadow green against a bright blue sky and a cavern teal against a near-black
+// one are nowhere near the same distance apart, and one fixed percentage left
+// the cavern's islands three and a half times brighter than the sky behind
+// them while World 1's were about right. So `keep` asks for a *result* instead
+// -- how much difference from the air is allowed to survive, as a share of the
+// air's own value -- and the lerp amount falls out of it. A lerp is linear, so
+// the residual distance is just (1 - t) times the original.
+// Linear-space relative luminance. THREE.Color converts sRGB hex to linear on
+// construction, so this is the real thing and not a gamma-encoded stand-in.
+const lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+
+function hazed(base, air, keep) {
+  const allow = keep * (lum(air) + 0.05);
+  const d = Math.hypot(base.r - air.r, base.g - air.g, base.b - air.b);
+  return base.clone().lerp(air, d > allow ? 1 - allow / d : 0);
 }
 
 // One irregular island: a jagged n-gon plateau, a short cliff, and a keel
@@ -60,14 +88,18 @@ function hazed(base, air, amount, value) {
 // primitive, because a scaled icosahedron seen from a camera looking down
 // presents its top face as a clean hexagon -- unmistakably a shape, never a
 // place.
-// `air` and `sink` give every vertex a second, per-vertex fade towards the air
-// on top of the per-island one: the further *down* a vertex is, the deeper into
-// the haze it goes. Three flat fills -- plateau, cliff, keel -- is what made
-// these read as cut paper; a distant mass has a value gradient down it whether
-// or not it has any lighting, because the air in front of the bottom of it is
-// thicker than the air in front of the top. It costs nothing: the vertex
-// colours already exist.
-function island(out, cx, cy, cz, radius, depth, rnd, top, mid, deep, air, sink) {
+// `sinkTo` and `sink` give every vertex a second, per-vertex drift on top of
+// the per-face one: the further *down* a vertex is, the closer it gets to the
+// keel's colour. Three flat fills -- plateau, cliff, keel -- is what made these
+// read as cut paper; a distant mass has a value gradient down it whether or not
+// it has any lighting, and it costs nothing here because the vertex colours
+// already exist.
+//
+// The gradient runs from the air *down into* the rock, not the other way round.
+// Everything above the waterline of a hazed mass is nearly the sky; the shaded
+// underside is the only part with a value of its own, and it is what tells the
+// eye this is a solid object rather than a smudge on the backdrop.
+function island(out, cx, cy, cz, radius, depth, rnd, top, mid, deep, sinkTo, sink) {
   const n = 7 + ((rnd() * 3) | 0);
   const rim = [];
   const waist = [];
@@ -87,7 +119,7 @@ function island(out, cx, cy, cz, radius, depth, rnd, top, mid, deep, air, sink) 
       out.pos.push(p[0], p[1], p[2]);
       out.nor.push(0, 1, 0); // unlit material: normals are never sampled
       const k = Math.min(1, Math.max(0, (cy - p[1]) / depth));
-      _c.copy(col).lerp(air, k * sink);
+      _c.copy(col).lerp(sinkTo, k * sink);
       out.col.push(_c.r, _c.g, _c.b);
     }
     out.idx.push(base, base + 1, base + 2);
@@ -112,14 +144,19 @@ function island(out, cx, cy, cz, radius, depth, rnd, top, mid, deep, air, sink) 
 // Because the camera sits at `dist * VIEW_DIR` and these sit at `dist * p`, the
 // vector from one to the other also scales with `dist`: angular position and
 // apparent size come out exactly invariant, on every board, at every zoom.
-function buildIslands(theme, detail, seed) {
+function buildIslands(theme, themeKey, detail, seed, reject) {
   const rnd = mulberry(seed);
   const out = { pos: [], nor: [], col: [], idx: [] };
   const count = Math.max(3, Math.round(6 * detail));
 
-  const grass = new THREE.Color(theme.grass);
-  const rock = new THREE.Color(theme.dirt);
-  const air = new THREE.Color(theme.ground);
+  const air = new THREE.Color(theme.ground).lerp(new THREE.Color(theme.horizon), 0.15);
+  // On the menu and the world map the "grass" of the theme is a meadow green
+  // that has nothing to do with the purple dusk those screens are lit by, and
+  // at this much haze the residual 15% of it was the only hue in the frame that
+  // did not belong. Backdrop screens take their island colour from their own
+  // air instead, so the land is the sky with a value break in it.
+  const grass = new THREE.Color(themeKey === 0 ? theme.ground : theme.grass);
+  const rock = new THREE.Color(themeKey === 0 ? theme.bounce : theme.dirt);
 
   for (let i = 0; i < count; i++) {
     // Placed explicitly out to the left and right rather than on a ring. The
@@ -128,30 +165,50 @@ function buildIslands(theme, detail, seed) {
     // first version of this hung one immediately behind the exit portal, which
     // is the last object in the game that should have to compete for the eye.
     const side = i % 2 ? 1 : -1;
-    const x = side * (0.42 + rnd() * 0.22);
-    const z = -(0.35 + rnd() * 0.50);
-    // Well below the board, not merely behind it. The camera looks *down* at
-    // 53 degrees, so anything level with the island sits above the top of the
-    // frame; these have to be far enough under it to fall inside the view.
-    const y = -(0.80 + rnd() * 0.55);
-    const s = 0.055 + rnd() * 0.065;
-    // Two things vary with distance: how far the colour has drifted into the
-    // air, and how dark it has gone. Both, because either one alone leaves the
-    // far islands reading as nearer, paler ones.
+    let x = 0, y = 0, z = 0, s = 0;
+    // Placements are proposed and tested rather than taken as drawn. `reject`
+    // knows where the program tray is, and an island that runs down behind the
+    // tray and reappears beside it is the single most convincing "this is
+    // broken" signal the backdrop can send -- a teal mass ran from y=1900 under
+    // the panel and out the other side, which reads as a rendering fault, not
+    // as land. Eight tries is plenty; the last proposal stands if none pass, so
+    // the backdrop never silently loses islands.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      x = side * (0.42 + rnd() * 0.22);
+      z = -(0.35 + rnd() * 0.50);
+      // Well below the board, not merely behind it. The camera looks *down* at
+      // 53 degrees, so anything level with the island sits above the top of the
+      // frame; these have to be far enough under it to fall inside the view.
+      y = -(0.74 + rnd() * 0.46);
+      s = 0.055 + rnd() * 0.065;
+      if (!reject || !reject(x, y, z, s)) break;
+    }
+    // One number, and it is how much air is in front of the surface. Distance
+    // sets the floor; the cliff and the keel are further into it than the
+    // plateau because there is more atmosphere in front of the bottom of a
+    // distant mass than the top of it, and that gradient is the only modelling
+    // an unlit backdrop object gets.
     //
-    // The floor used to be 0.38 -- only 38% air on the nearest island, which
-    // put it at the same luminance as the board's own grass. In World 4 that
-    // meant a distant island at (82,138,208) against playable tiles at
-    // (67,116,192): a child could read it as somewhere Bloop might go. Nothing
-    // that is not standable is allowed anywhere near the board's value.
+    // The target is measured: the plateau within about dE 12 of the sky behind
+    // it and the keel out around dE 22, so the shape is unmistakably *there*
+    // and unmistakably not somewhere Bloop could stand. The old numbers put the
+    // nearest island within a hair of the board's own grass in World 4 -- a
+    // distant island at (82,138,208) against playable tiles at (67,116,192) --
+    // and nothing that is not standable is allowed anywhere near the board's
+    // value. Converging on the air rather than diverging into the dark is what
+    // keeps both of those true at once.
     const t = Math.min(1, Math.max(0, (Math.hypot(x, z) - 0.6) / 0.5));
-    const haze = 0.62 + t * 0.24;
-    const value = Math.min(0.70, 0.70 - t * 0.14);
+    // Further away keeps less. Everything else is the plateau/cliff/keel run:
+    // the target, measured off a still, is a top within about dE 12 of the sky
+    // behind it and a keel out around dE 22 -- present enough to be a solid
+    // thing, nowhere near close enough to the board's own value to be mistaken
+    // for somewhere Bloop could stand.
+    const near = 1 - t * 0.30;
+    const keel = hazed(rock, air, 0.85 * near);
     island(out, x, y, z, s, s * (1.3 + rnd() * 1.4), rnd,
-      hazed(grass, air, haze, value),
-      hazed(rock, air, haze + 0.05, value * 0.92),
-      hazed(rock, air, haze + 0.12, value * 0.84),
-      air, 0.30);
+      hazed(grass, air, 0.30 * near),
+      hazed(rock, air, 0.50 * near),
+      keel, keel, 0.55);
   }
 
   return out.idx.length ? finish(out) : null;
@@ -191,8 +248,28 @@ const AIR = {
 // stays uniform: it is not a screen axis, so it cannot clump visibly.
 const GRID_X = 4, GRID_Y = 3;
 
-function buildMotes(themeKey, detail, boardRadius, seed) {
+// Relative luminance of an sRGB hex, for the daylight test below.
+function skyLum(hex) {
+  const c = new THREE.Color(hex); // THREE.Color converts to linear on construction
+  return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+}
+// Above this the sky is bright enough that a white additive speck cannot read
+// as anything but a dead pixel.
+const DAYLIGHT = 0.35;
+
+function buildMotes(themeKey, theme, detail, boardRadius, seed) {
   const air = AIR[themeKey] || AIR[0];
+  // World 1's motes were fixed by hand and the other daylight worlds were not,
+  // so World 4 still had eight discrete white specks sitting on a bright blue
+  // noon sky -- sensor dust, not air. The rule is the same in every world with a
+  // bright sky: a mote is only ever a slight local thickening of the air it is
+  // suspended in, so on a bright sky it takes the sky's own colour and most of
+  // its opacity comes off. On a dark sky a mote genuinely is brighter than its
+  // background -- a glint, a spark, rain catching the one warm break in the
+  // cloud -- so those worlds are left exactly as they are.
+  const bright = skyLum(theme.horizon) > DAYLIGHT;
+  const tint = bright ? theme.horizon : air.tint;
+  const opacity = bright ? Math.min(air.opacity, 0.25) : air.opacity;
   const count = Math.max(40, Math.round(220 * detail));
   const rnd = mulberry(seed + 4242);
   const pos = new Float32Array(count * 3);
@@ -229,12 +306,12 @@ function buildMotes(themeKey, detail, boardRadius, seed) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
   const mat = new THREE.PointsMaterial({
-    color: air.tint,
+    color: tint,
     map: glowDiscTexture(),
     size: air.size,
     sizeAttenuation: true,
     transparent: true,
-    opacity: air.opacity,
+    opacity,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     // Points are unlit by definition; fogging them is what stops the far ones
@@ -263,25 +340,43 @@ export function createScenery(scene, themeKey, theme, boardRadius) {
   const owned = [];
   let stop = null;
 
-  const islandGeo = buildIslands(theme, detail, seed);
+  // Islands are placed in units of camera distance and the camera direction is
+  // fixed, so an island's *angular* position is the same whatever distance the
+  // board settles at -- which means it can be projected once, here, and the
+  // answer stays true. Anything whose keel would hang into the band the program
+  // tray occupies is re-rolled; below the tray it is invisible anyway, and
+  // straddling its edge is what made one read as a rendering fault.
+  const cam = getCamera();
+  const _p = new THREE.Vector3();
+  const reject = cam ? (x, y, z, s) => {
+    const band = usableBandNDC();
+    const d = cam.position.length() || 1;
+    // The lowest point of the island, in the same normalised units, scaled up
+    // into world space the way the mesh itself will be.
+    _p.set(x, y - s * 2.7, z).multiplyScalar(d).project(cam);
+    return _p.y < band.bottom;
+  } : null;
+
+  const islandGeo = buildIslands(theme, themeKey, detail, seed, reject);
   let islands = null;
   if (islandGeo) {
     const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
     islands = new THREE.Mesh(islandGeo, mat);
+    islands.name = 'scenery.islands';
     // Never culled and never a shadow caster: they are backdrop, and a shadow
     // frustum big enough to include them would waste the whole shadow map.
     islands.frustumCulled = false;
     // Built in units of camera distance (see buildIslands), so they start at
     // wherever the camera is now -- not at 1, which would be a tenth of a metre
     // across, and not at a constant, which would pop on the first frame.
-    const cam = getCamera();
     islands.scale.setScalar(cam ? cam.position.length() : 20);
     group.add(islands);
     owned.push(islandGeo, mat);
   }
 
-  const motes = buildMotes(themeKey, detail, boardRadius, seed);
+  const motes = buildMotes(themeKey, theme, detail, boardRadius, seed);
   const points = new THREE.Points(motes.geo, motes.mat);
+  points.name = 'scenery.motes';
   points.frustumCulled = false;
   points.renderOrder = 5;
   group.add(points);
